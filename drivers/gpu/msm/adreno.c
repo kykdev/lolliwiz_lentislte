@@ -110,7 +110,7 @@ static struct adreno_device device_3d0 = {
 unsigned int ft_detect_regs[FT_DETECT_REGS_COUNT];
 
 /* Nice level for the higher priority GPU start thread */
-static unsigned int _wake_nice = -7;
+static int _wake_nice = -7;
 
 /* Number of milliseconds to stay active active after a wake on touch */
 static unsigned int _wake_timeout = 100;
@@ -2333,6 +2333,36 @@ static ssize_t _ft_hang_intr_status_show(struct device *dev,
 }
 
 /**
+ * _wake_nice_store() - Store nice level for the higher priority GPU start
+ * thread
+ * @dev: device ptr
+ * @attr: Device attribute
+ * @buf: value to write
+ * @count: size of the value to write
+ *
+ */
+static ssize_t _wake_nice_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	return _ft_sysfs_store(buf, count, &_wake_nice);
+}
+
+/**
+ * _wake_nice_show() -  Show nice level for the higher priority GPU start
+ * thread
+ * @dev: device ptr
+ * @attr: Device attribute
+ * @buf: value read
+ */
+static ssize_t _wake_nice_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", _wake_nice);
+}
+
+/**
  * _wake_timeout_store() - Store the amount of time to extend idle check after
  * wake on touch
  * @dev: device ptr
@@ -2373,7 +2403,7 @@ static FT_DEVICE_ATTR(ft_fast_hang_detect);
 static FT_DEVICE_ATTR(ft_long_ib_detect);
 static FT_DEVICE_ATTR(ft_hang_intr_status);
 
-static DEVICE_INT_ATTR(wake_nice, 0644, _wake_nice);
+static FT_DEVICE_ATTR(wake_nice);
 static FT_DEVICE_ATTR(wake_timeout);
 
 static const struct device_attribute *ft_attr_list[] = {
@@ -2382,7 +2412,7 @@ static const struct device_attribute *ft_attr_list[] = {
 	&dev_attr_ft_fast_hang_detect,
 	&dev_attr_ft_long_ib_detect,
 	&dev_attr_ft_hang_intr_status,
-	&dev_attr_wake_nice.attr,
+	&dev_attr_wake_nice,
 	&dev_attr_wake_timeout,
 	NULL,
 };
