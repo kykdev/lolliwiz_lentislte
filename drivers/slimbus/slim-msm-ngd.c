@@ -292,7 +292,7 @@ static int mdm_ssr_notify_cb(struct notifier_block *n, unsigned long code,
 				"SLIM MDM SSR (active framer on MDM) dev-down\n");
 			list_for_each_entry(sbdev, &ctrl->devs, dev_list)
 				slim_report_absent(sbdev);
-			ngd_slim_power_up(dev, true);
+			ngd_slim_runtime_resume(dev->dev);
 			pm_runtime_set_active(dev->dev);
 			pm_runtime_enable(dev->dev);
 		}
@@ -355,13 +355,14 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	u16 txn_mc = txn->mc;
 	u8 wbuf[SLIM_MSGQ_BUF_LEN];
 	bool report_sat = false;
+	enum msm_ctrl_state cur_state = dev->state;
 
-	mutex_lock(&dev->tx_lock);
 	if (txn->mc == SLIM_USR_MC_REPORT_SATELLITE &&
 		txn->mt == SLIM_MSG_MT_SRC_REFERRED_USER)
 		report_sat = true;
-	if (!pm_runtime_enabled(dev->dev) && dev->state == MSM_CTRL_ASLEEP &&
-			report_sat == false) {
+
+	if (!report_sat && !pm_runtime_enabled(dev->dev) &&
+			cur_state == MSM_CTRL_ASLEEP) {
 		/*
 		 * Counter-part of system-suspend when runtime-pm is not enabled
 		 * This way, resume can be left empty and device will be put in
@@ -369,7 +370,6 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 		 * If the state was DOWN, SSR UP notification will take
 		 * care of putting the device in active state.
 		 */
-		mutex_unlock(&dev->tx_lock);
 		ret = ngd_slim_runtime_resume(dev->dev);
 
 		if (ret) {
@@ -380,22 +380,18 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	}
 
 	else if (txn->mc & SLIM_MSG_CLK_PAUSE_SEQ_FLG) {
-		mutex_unlock(&dev->tx_lock);
 		return -EPROTONOSUPPORT;
 	}
 
 	if (txn->mt == SLIM_MSG_MT_CORE &&
 		(txn->mc >= SLIM_MSG_MC_BEGIN_RECONFIGURATION &&
 		 txn->mc <= SLIM_MSG_MC_RECONFIGURE_NOW)) {
-		mutex_unlock(&dev->tx_lock);
 		return 0;
 	}
 
 	/* If txn is tried when controller is down, wait for ADSP to boot */
 	if (!report_sat) {
-		enum msm_ctrl_state cur_state = dev->state;
 
-		mutex_unlock(&dev->tx_lock);
 		if (cur_state == MSM_CTRL_DOWN) {
 			u8 mc = (u8)txn->mc;
 			int timeout;
@@ -457,8 +453,6 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 			mutex_unlock(&dev->tx_lock);
 			msm_slim_put_ctrl(dev);
 			return -EREMOTEIO;
-		} else {
-			dev->state = MSM_CTRL_AWAKE;
 		}
 	}
 
@@ -494,12 +488,12 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 				SLIM_DBG(dev, "SLIM PGD LA:0x%x, ret:%d\n",
 					dev->pgdla, ret);
 				if (ret) {
-					mutex_unlock(&dev->tx_lock);
 					SLIM_ERR(dev,
 						"Incorrect SLIM-PGD EAPC:0x%x\n",
 							dev->pdata.eapc);
 					return ret;
 				}
+				mutex_lock(&dev->tx_lock);
 			}
 			txn->la = dev->pgdla;
 		}
@@ -652,9 +646,10 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 		return ret ? ret : dev->err;
 	}
 ngd_xfer_err:
-	mutex_unlock(&dev->tx_lock);
-	if (!report_sat)
+	if (!report_sat) {
+		mutex_unlock(&dev->tx_lock);
 		msm_slim_put_ctrl(dev);
+	}
 	return ret ? ret : dev->err;
 }
 
@@ -964,7 +959,6 @@ capability_retry:
 			enum msm_ctrl_state prev_state = dev->state;
 			SLIM_INFO(dev,
 				"SLIM SAT: capability exchange successful\n");
-			dev->state = MSM_CTRL_AWAKE;
 			if (prev_state >= MSM_CTRL_ASLEEP)
 				complete(&dev->reconf);
 			else
@@ -1049,8 +1043,10 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 	if (!mdm_restart && cur_state == MSM_CTRL_DOWN) {
 		int timeout = wait_for_completion_timeout(&dev->qmi.qmi_comp,
 						HZ);
-		if (!timeout)
+		if (!timeout) {
 			SLIM_ERR(dev, "slimbus QMI init timed out\n");
+			return -EREMOTEIO;
+		}
 	}
 
 	/* No need to vote if contorller is not in low power mode */
@@ -1146,11 +1142,11 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 		err_cnt = 0;
 	}
 
-	if (cur_state == MSM_CTRL_DOWN) {
-		complete(&dev->ctrl_up);
-		/* Resetting the log level */
-		SLIM_RST_LOGLVL(dev);
-	}
+	/* mutliple transactions waiting on slimbus to power up? */
+	if (cur_state == MSM_CTRL_DOWN)
+		complete_all(&dev->ctrl_up);
+	/* Resetting the log level */
+	SLIM_RST_LOGLVL(dev);
 	return 0;
 }
 
@@ -1602,8 +1598,10 @@ static int ngd_slim_runtime_idle(struct device *device)
 {
 	struct platform_device *pdev = to_platform_device(device);
 	struct msm_slim_ctrl *dev = platform_get_drvdata(pdev);
+	mutex_lock(&dev->tx_lock);
 	if (dev->state == MSM_CTRL_AWAKE)
 		dev->state = MSM_CTRL_IDLE;
+	mutex_unlock(&dev->tx_lock);
 	//dev_dbg(device, "pm_runtime: idle...\n");
 	pm_request_autosuspend(device);
 	return -EAGAIN;
@@ -1620,6 +1618,7 @@ static int ngd_slim_runtime_resume(struct device *device)
 	struct platform_device *pdev = to_platform_device(device);
 	struct msm_slim_ctrl *dev = platform_get_drvdata(pdev);
 	int ret = 0;
+	mutex_lock(&dev->tx_lock);
 	if (dev->state >= MSM_CTRL_ASLEEP)
 		ret = ngd_slim_power_up(dev, false);
 	if (ret) {
@@ -1631,6 +1630,7 @@ static int ngd_slim_runtime_resume(struct device *device)
 	} else {
 		dev->state = MSM_CTRL_AWAKE;
 	}
+	mutex_unlock(&dev->tx_lock);
 	SLIM_INFO(dev, "Slim runtime resume: ret %d\n", ret);
 	return ret;
 }
@@ -1641,6 +1641,7 @@ static int ngd_slim_runtime_suspend(struct device *device)
 	struct platform_device *pdev = to_platform_device(device);
 	struct msm_slim_ctrl *dev = platform_get_drvdata(pdev);
 	int ret = 0;
+	mutex_lock(&dev->tx_lock);
 	ret = ngd_slim_power_down(dev);
 	if (ret) {
 		if (ret != -EBUSY)
@@ -1649,6 +1650,7 @@ static int ngd_slim_runtime_suspend(struct device *device)
 	} else {
 		dev->state = MSM_CTRL_ASLEEP;
 	}
+	mutex_unlock(&dev->tx_lock);
 	SLIM_INFO(dev, "Slim runtime suspend: ret %d\n", ret);
 	return ret;
 }
