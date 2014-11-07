@@ -473,7 +473,13 @@ static ssize_t store_##file_name					\
 }
 
 //store_one(scaling_min_freq, min);
+#ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
+int exposed_policy_min = CONFIG_MSM_CPU_FREQ_MIN;
+#else
+#warning You need to echo min freq to /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq for the Touch booster interception fix to work correctly
+#warning Set CONFIG_MSM_CPU_FREQ_SET_MIN_MAX and CONFIG_MSM_CPU_FREQ_MIN to avoid this warning and allow this code to do it automatically for you
 int exposed_policy_min = -1;
+#endif
 static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy, const char *buf, size_t count)
 {
 	unsigned int ret = -EINVAL;
