@@ -456,6 +456,7 @@ struct mmc_host {
 	 * actually disabling the clock from it's source.
 	 */
 	bool			card_clock_off;
+	bool			wakeup_on_idle;
 #if defined(CONFIG_MMC_QC_CMD_LOGGING)
 	atomic_t	log_count;
 	bool		mmc_core_cmd_logging;
