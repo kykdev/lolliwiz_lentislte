@@ -86,3 +86,10 @@ config FB_MSM_CAMERA_CSC
 	bool "Support SAMSUNG CAMERA CSC"
 	---help---
 		Support for camera CSC tuning
+
+config FB_MSM_MDSS_KCAL_CTRL
+	depends on FB_MSM_MDSS
+	bool "MDSS color control"
+	---help---
+	  Enable sysfs for rgb/lut control for mdss-mdp display controllers
+	  in the MDSS sub-system.
