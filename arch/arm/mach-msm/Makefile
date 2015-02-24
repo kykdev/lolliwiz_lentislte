@@ -152,3 +152,4 @@ obj-$(CONFIG_BT_BCM4358) += board-bluetooth-bcm4358.o
 obj-$(CONFIG_GSM_MODEM_SPRD6500) += board-sprd6500-spi.o board-sprd6500-modems.o
 
 obj-$(CONFIG_MSM_HOTPLUG) += msm_hotplug.o
+obj-$(CONFIG_MSM_LIMITER) += msm_limiter.o
