@@ -76,3 +76,4 @@ obj-$(CONFIG_DM_VERITY)		+= dmverity_query.o
 obj-$(CONFIG_SEC_MODEM) += modem_if/
 
 obj-y += dualwave/
+obj-y				+= sound_control.o
