@@ -618,7 +618,7 @@
 // #define QCOM_NATIVE_HOTPLUGGING
 
 // ZZ: enable for sources with backported cpufreq implementation of 3.10 kernel
-// #define CPU_IDLE_TIME_IN_CPUFREQ
+#define CPU_IDLE_TIME_IN_CPUFREQ
 
 // ZZ: include profiles header file and set name for 'custom' profile (informational for a changed profile value)
 #include "cpufreq_zzmoove_profiles.h"
@@ -5329,7 +5329,7 @@ static inline void dbs_timer_init(struct cpu_dbs_info_s *dbs_info)
 	delay -= jiffies % delay;
 
 	dbs_info->enable = 1;
-	INIT_DELAYED_WORK_DEFERRABLE(&dbs_info->work, do_dbs_timer);
+	INIT_DEFERRABLE_WORK(&dbs_info->work, do_dbs_timer);
 	queue_delayed_work_on(dbs_info->cpu, dbs_wq, &dbs_info->work, delay);
 }
 
