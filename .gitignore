@@ -93,5 +93,5 @@ signing_key.priv
 signing_key.x509
 x509.genkey
 
-boot.img
+boot_*.img
 dt.img

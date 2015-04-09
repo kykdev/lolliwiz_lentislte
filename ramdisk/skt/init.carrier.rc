@@ -1,0 +1,187 @@
+# Copyright (C) 2012 The Android Open Source Project
+#
+# IMPORTANT: Do not create world writable files or directories.
+# This is a common source of Android security bugs.
+#
+
+on init
+#Private Mode
+    mkdir /mnt/shell/privatemode 0700 system system
+    mkdir /storage/Private 0000 system system
+
+on boot
+# For setting tcp delayed ack
+    chown system system /sys/kernel/ipv4/tcp_delack_seg
+    chown system system /sys/kernel/ipv4/tcp_use_userconfig
+
+# Define TCP delayed ack settings for WiFi & LTE
+    setprop net.tcp.delack.default     1
+    setprop net.tcp.delack.wifi        8
+    setprop net.tcp.delack.lte         8
+    setprop net.tcp.usercfg.default    0
+    setprop net.tcp.usercfg.wifi       1
+    setprop net.tcp.usercfg.lte        1
+
+# permission for Input Device(Touchkey).
+	chown radio system /sys/class/sec/sec_touchkey/touch_sensitivity
+    chown radio system /sys/class/sec/sec_touchkey/touchkey_firm_update
+    chown system radio /sys/class/sec/sec_touchkey/glove_mode
+    chown system radio /sys/class/sec/sec_touchkey/flip_mode
+    chown system radio /sys/class/sec/sec_touchkey/1mm_mode
+    chown system radio /sys/class/sec/sec_touchkey/boost_level
+
+# permission for MUIC(waterproof)
+    chown system radio /sys/class/sec/switch/uart_en
+
+# Fingerprint
+    mkdir /dev/validity 0770 system system
+
+# tdmb
+    chown system system /dev/tdmb
+    chmod 0660 /dev/tdmb
+
+# SSWAP
+    write /proc/sys/vm/swappiness 130
+
+# SENSOR FRAMEWORK : starts fingerprintService
+service vcsFPService /system/bin/vcsFPService
+    class late_start
+    user system
+    group system
+
+ #Private Mode
+ service privatemode /system/bin/sdcard /data/privatemode /mnt/shell/privatemode 1000 1000
+     class late_start
+     oneshot
+
+# Qualcomm Bluetooth
+    chown bluetooth bluetooth /dev/ttyHS0
+    chown bluetooth bluetooth /sys/class/rfkill/rfkill0/state
+    chown bluetooth bluetooth /sys/class/rfkill/rfkill0/type
+    chown bluetooth bluetooth /sys/class/rfkill/rfkill0/device/extldo
+
+# bluetooth dhcp config
+
+# TODO: replace it with device's DEXPREOPT_BOOT_JARS
+
+on fs
+
+# Support Preload install apks
+    mkdir /preload 0771 system system
+
+#For Absolute Persistence Partition 
+       
+    mkdir /persdata 0755 system system 
+    mkdir /persdata/absolute 0750 system system 
+  
+    wait /dev/block/platform/msm_sdcc.1/by-name/persdata 
+    check_fs /dev/block/platform/msm_sdcc.1/by-name/persdata ext4 
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/persdata /persdata/absolute nosuid nodev barrier=1 
+      
+    chown system system /persdata 
+    chmod 0755 /persdata 
+    chown system system /persdata/absolute 
+    chmod 0750 /persdata/absolute
+
+# n3rimd
+service n3rimd /system/bin/n3rimd
+    class main
+    user root
+    oneshot
+
+on post-fs-data
+
+# SKT PM PlayReady
+    mkdir /data/playready 771 system skt
+    chown system skt /data/playready
+    chmod 0771 /data/playready
+
+# SKT DRM for hoppin
+    mkdir /data/data/.sktdrm 0775
+    chown system radio /data/data/.sktdrm
+    chmod 0775 /data/data/.sktdrm
+
+# for SKT TBASED
+    mkdir /data/tbased 0775 root wifi
+    chown root wifi /data/tbased
+    chmod 0775 /data/tbased
+
+    chown wifi wifi /system/lib/libiwlan_module.so
+    chmod 0644 /system/lib/libiwlan_module.so
+    chmod 0755 /system/bin/tbased
+
+    chmod 0644 /data/misc/wifi/hiddenAPs.txt
+
+# SKT TBASE
+service tbased /system/bin/tbased
+    class main
+    user root
+    oneshot
+
+# n3rimd
+service n3rimd /system/bin/n3rimd
+    class main
+    user root
+    oneshot
+
+on post-fs-data
+#Private Mode
+    mkdir /data/privatemode 0770 system system
+    chown system system /data/privatemode
+    restorecon /data/privatemode
+
+on post-fs-data
+# MOBILE OFFICE Permanent memory access
+    mkdir /efs/security 0771 root root
+    chown radio system /efs/security
+    chmod 0771 /efs/security
+
+on post-fs-data
+# CP Reset Log
+    mkdir /data/radio 0770 radio radio
+
+service diag_knight /system/bin/diag_knight
+    class main
+    user root
+    group system radio log
+
+# service for TZPR provisioning version check app
+service scranton_RD /system/bin/scranton_RD
+    class main
+    user root
+    disabled
+    oneshot
+
+# start for TZPR provisioning version check app
+on property:sys.qseecomd.enable=true
+    start scranton_RD
+
+    mkdir /efs/drm/playready 0775
+    chown drm system /efs/drm/playready
+    chmod 0775 /efs/drm/playready
+
+# umount service
+service umount_service /system/bin/umount /preload
+    disabled
+    oneshot
+    
+# Support Preload install apks
+on property:persist.sys.storage_preload=1
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/hidden /preload nosuid nodev ro barrier=1
+    setprop storage.preload.complete 1
+
+on property:persist.sys.storage_preload=0
+    start umount_service
+
+# SSWAP
+service swapon /sbin/sswap -s
+    class core
+    user root
+    group root
+    seclabel u:r:sswap:s0
+    oneshot
+
+service dmb /system/bin/dmbserver
+    class main
+    user media
+    group system radio inet misc audio camera graphics net_bt net_bt_admin sdcard_rw sdcard_r shell media_rw
