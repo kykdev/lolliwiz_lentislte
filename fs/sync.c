@@ -84,6 +84,12 @@ static void sync_fs_one_sb(struct super_block *sb, void *arg)
 		sb->s_op->sync_fs(sb, *(int *)arg);
 }
 
+static void sync_one_sb(struct super_block *sb, void *arg)
+{
+	if (!(sb->s_flags & MS_RDONLY))
+		__sync_filesystem(sb, *(int *)arg);
+}
+
 /*
  * Sync all the data for all the filesystems (called by sys_sync() and
  * emergency sync)
