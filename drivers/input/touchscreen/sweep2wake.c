@@ -55,9 +55,9 @@
 #define S2W_PWRKEY_DUR          60
 
 /* Screen size */
-#define DEFAULT_S2W_Y_MAX               1920
+#define DEFAULT_S2W_Y_MAX               2560
 #define DEFAULT_S2W_Y_LIMIT             DEFAULT_S2W_Y_MAX-130
-#define DEFAULT_S2W_X_MAX		1080
+#define DEFAULT_S2W_X_MAX		1440
 
 /* 0
  * |
