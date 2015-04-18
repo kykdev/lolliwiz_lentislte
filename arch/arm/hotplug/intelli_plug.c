@@ -21,7 +21,6 @@
 #include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/cpufreq.h>
-#include "intelli_plug.h"
 
 #ifdef CONFIG_POWERSUSPEND
 #include <linux/powersuspend.h>
@@ -52,6 +51,18 @@ static struct delayed_work intelli_plug_boost;
 
 static struct workqueue_struct *intelliplug_wq;
 static struct workqueue_struct *intelliplug_boost_wq;
+
+static unsigned int intelli_plug_active = 0;
+module_param(intelli_plug_active, uint, 0664);
+
+static unsigned int touch_boost_active = 1;
+module_param(touch_boost_active, uint, 0664);
+
+static unsigned int nr_run_profile_sel = 0;
+module_param(nr_run_profile_sel, uint, 0664);
+
+//default to something sane rather than zero
+static unsigned int sampling_time = DEF_SAMPLING_MS;
 
 static int persist_count = 0;
 
