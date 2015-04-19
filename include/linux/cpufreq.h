@@ -520,9 +520,9 @@ extern struct cpufreq_governor cpufreq_gov_interactive_pro;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_PRESERVATIVE)
 extern struct cpufreq_governor cpufreq_gov_preservative;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_preservative)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_MYTHX)
-extern struct cpufreq_governor cpufreq_gov_mythx;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_mythx)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_MYTHX_PLUG)
+extern struct cpufreq_governor cpufreq_gov_mythx_plug;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_mythx_plug)
 #endif
 
 /*********************************************************************
