@@ -96,7 +96,6 @@ static unsigned long min_sample_time = DEFAULT_MIN_SAMPLE_TIME;
 *define a static timer for the boostpulse. This is done to prevent it from taking a dynamic value from the min. sampletime
 */
 #define DEFAULT_BOOSTPULSE_STATIC_TIMER (20 * USEC_PER_MSEC)
-static unsigned long boostpulse_static_timer = DEFAULT_BOOSTPULSE_STATIC_TIMER; 
 
 /*
  * The sample rate of the timer used to increase frequency
@@ -114,7 +113,6 @@ static unsigned long syncfreq_timer = SYNCFREQ_TIMER;
 
 /* The timer to wait 20ms upon loading the syncfreq later in this governor */
 #define SIMPL_TIMER (20 * USEC_PER_MSEC)
-static unsigned long simpl_timer = SIMPL_TIMER;
 
 /*
  * Wait this long before raising speed above hispeed, by default a single
@@ -292,7 +290,6 @@ static bool simpl_syncfreq = false;
 	unsigned int highfreq;
 	unsigned int lowfreq;
 	unsigned int syncstate;
-	unsigned int simpl_timer;
 	int index;
 
 	freqmin = 0;
@@ -336,7 +333,7 @@ static bool simpl_syncfreq = false;
 		if (freq == syncfreq) {
 			syncstate = true;
 		 		if (syncstate == true) {
-				simpl_timer;
+				//simpl_timer;
 				}
 
 			
@@ -721,9 +718,9 @@ static void cpufreq_mythx_plug_boost(void)
 	unsigned long flags[2];
 	unsigned int syncfreq;
 
-	syncfreq = SYNC_FREQ;
-
 	struct cpufreq_mythx_plug_cpuinfo *pcpu;
+
+	syncfreq = SYNC_FREQ;
 
 	spin_lock_irqsave(&speedchange_cpumask_lock, flags[0]);
 
