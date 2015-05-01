@@ -1,3 +1,5 @@
+ccflags-y := -fno-aggressive-loop-optimizations
+
 obj-y += io.o dma.o memory.o
 ifndef CONFIG_ARM_ARCH_TIMER
 obj-y += timer.o
