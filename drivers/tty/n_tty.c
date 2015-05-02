@@ -2066,8 +2066,12 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
 			if (tty->ops->flush_chars)
 				tty->ops->flush_chars(tty);
 		} else {
+			struct n_tty_data *ldata = tty->disc_data;
+
 			while (nr > 0) {
+				mutex_lock(&ldata->output_lock);
 				c = tty->ops->write(tty, b, nr);
+				mutex_unlock(&ldata->output_lock);
 				if (c < 0) {
 					retval = c;
 					goto break_out;
@@ -2174,6 +2178,19 @@ static int n_tty_ioctl(struct tty_struct *tty, struct file *file,
 		return n_tty_ioctl_helper(tty, file, cmd, arg);
 	}
 }
+
+#if defined (CONFIG_SND_SOC_ES705)
+int read_n_tty_read_cnt(struct tty_struct *tty)
+{
+	struct n_tty_data *ldata = tty->disc_data;
+	int retval;
+
+	retval = ldata->read_cnt;
+
+	return retval;
+}
+EXPORT_SYMBOL(read_n_tty_read_cnt);
+#endif
 
 struct tty_ldisc_ops tty_ldisc_N_TTY = {
 	.magic           = TTY_LDISC_MAGIC,
