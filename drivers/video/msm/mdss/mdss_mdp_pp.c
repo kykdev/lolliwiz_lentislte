@@ -25,7 +25,7 @@
 
 #include "mdss_mdp_kcal_ctrl.h"
 
-#ifdef CONFIG_FB_MSM_CAMERA_CSC [v2]
+#ifdef CONFIG_FB_MSM_CAMERA_CSC
 struct mdp_csc_cfg mdp_csc_convert_wideband = {
 	0,
 	{
