@@ -19,7 +19,7 @@
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
 #include <linux/mfd/wcd9xxx/core.h>
-#include <linux/mfd/wcd9xxx/wcd9330_registers.h>
+#include <linux/mfd/wcd9xxx/wcd9320_registers.h>
 
 #define SOUND_CONTROL_MAJOR_VERSION	3
 #define SOUND_CONTROL_MINOR_VERSION	6
@@ -30,8 +30,8 @@ extern int wcd9xxx_hw_revision;
 static int snd_ctrl_locked = 0;
 static int snd_rec_ctrl_locked = 0;
 
-extern unsigned int tomtom_read(struct snd_soc_codec *codec, unsigned int reg);
-extern int tomtom_write(struct snd_soc_codec *codec, unsigned int reg,
+extern unsigned int taiko_read(struct snd_soc_codec *codec, unsigned int reg);
+extern int taiko_write(struct snd_soc_codec *codec, unsigned int reg,
 		unsigned int value);
 
 #define REG_SZ	25
@@ -44,73 +44,73 @@ static unsigned int *cache_select(unsigned int reg)
 	unsigned int *out = NULL;
 
         switch (reg) {
-                case TOMTOM_A_RX_HPH_L_GAIN:
+                case TAIKO_A_RX_HPH_L_GAIN:
 			out = &cached_regs[0];
 			break;
-                case TOMTOM_A_RX_HPH_R_GAIN:
+                case TAIKO_A_RX_HPH_R_GAIN:
 			out = &cached_regs[1];
 			break;
-                case TOMTOM_A_CDC_RX1_VOL_CTL_B2_CTL:
+                case TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL:
 			out = &cached_regs[4];
 			break;
-                case TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL:
+                case TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL:
 			out = &cached_regs[5];
 			break;
-                case TOMTOM_A_CDC_RX3_VOL_CTL_B2_CTL:
+                case TAIKO_A_CDC_RX3_VOL_CTL_B2_CTL:
 			out = &cached_regs[6];
 			break;
-                case TOMTOM_A_CDC_RX4_VOL_CTL_B2_CTL:
+                case TAIKO_A_CDC_RX4_VOL_CTL_B2_CTL:
 			out = &cached_regs[7];
 			break;
-                case TOMTOM_A_CDC_RX5_VOL_CTL_B2_CTL:
+                case TAIKO_A_CDC_RX5_VOL_CTL_B2_CTL:
 			out = &cached_regs[8];
 			break;
-                case TOMTOM_A_CDC_RX6_VOL_CTL_B2_CTL:
+                case TAIKO_A_CDC_RX6_VOL_CTL_B2_CTL:
 			out = &cached_regs[9];
 			break;
-                case TOMTOM_A_CDC_RX7_VOL_CTL_B2_CTL:
+                case TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL:
 			out = &cached_regs[10];
 			break;
-                case TOMTOM_A_CDC_TX1_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX1_VOL_CTL_GAIN:
 			out = &cached_regs[11];
 			break;
-                case TOMTOM_A_CDC_TX2_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX2_VOL_CTL_GAIN:
 			out = &cached_regs[12];
 			break;
-                case TOMTOM_A_CDC_TX3_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX3_VOL_CTL_GAIN:
 			out = &cached_regs[13];
 			break;
-                case TOMTOM_A_CDC_TX4_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX4_VOL_CTL_GAIN:
 			out = &cached_regs[14];
 			break;
-                case TOMTOM_A_CDC_TX5_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX5_VOL_CTL_GAIN:
 			out = &cached_regs[15];
 			break;
-                case TOMTOM_A_CDC_TX6_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX6_VOL_CTL_GAIN:
 			out = &cached_regs[16];
 			break;
-                case TOMTOM_A_CDC_TX7_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX7_VOL_CTL_GAIN:
 			out = &cached_regs[17];
 			break;
-                case TOMTOM_A_CDC_TX8_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX8_VOL_CTL_GAIN:
 			out = &cached_regs[18];
 			break;
-                case TOMTOM_A_CDC_TX9_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX9_VOL_CTL_GAIN:
 			out = &cached_regs[19];
 			break;
-                case TOMTOM_A_CDC_TX10_VOL_CTL_GAIN:
+                case TAIKO_A_CDC_TX10_VOL_CTL_GAIN:
 			out = &cached_regs[20];
 			break;
-		case TOMTOM_A_RX_LINE_1_GAIN:
+		case TAIKO_A_RX_LINE_1_GAIN:
 			out = &cached_regs[21];
 			break;
-		case TOMTOM_A_RX_LINE_2_GAIN:
+		case TAIKO_A_RX_LINE_2_GAIN:
 			out = &cached_regs[22];
 			break;
-		case TOMTOM_A_RX_LINE_3_GAIN:
+		case TAIKO_A_RX_LINE_3_GAIN:
 			out = &cached_regs[23];
 			break;
-		case TOMTOM_A_RX_LINE_4_GAIN:
+		case TAIKO_A_RX_LINE_4_GAIN:
 			out = &cached_regs[24];
 			break;
         }
@@ -140,37 +140,37 @@ int snd_hax_reg_access(unsigned int reg)
 	int ret = 1;
 
 	switch (reg) {
-		case TOMTOM_A_RX_HPH_L_GAIN:
-		case TOMTOM_A_RX_HPH_R_GAIN:
-		case TOMTOM_A_RX_HPH_L_STATUS:
-		case TOMTOM_A_RX_HPH_R_STATUS:
+		case TAIKO_A_RX_HPH_L_GAIN:
+		case TAIKO_A_RX_HPH_R_GAIN:
+		case TAIKO_A_RX_HPH_L_STATUS:
+		case TAIKO_A_RX_HPH_R_STATUS:
 			if (snd_ctrl_locked > 1)
 				ret = 0;
 			break;
-		case TOMTOM_A_CDC_RX1_VOL_CTL_B2_CTL:
-		case TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL:
-		case TOMTOM_A_CDC_RX3_VOL_CTL_B2_CTL:
-		case TOMTOM_A_CDC_RX4_VOL_CTL_B2_CTL:
-		case TOMTOM_A_CDC_RX5_VOL_CTL_B2_CTL:
-		case TOMTOM_A_CDC_RX6_VOL_CTL_B2_CTL:
-		case TOMTOM_A_CDC_RX7_VOL_CTL_B2_CTL:
-		case TOMTOM_A_RX_LINE_1_GAIN:
-		case TOMTOM_A_RX_LINE_2_GAIN:
-		case TOMTOM_A_RX_LINE_3_GAIN:
-		case TOMTOM_A_RX_LINE_4_GAIN:
+		case TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX3_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX4_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX5_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX6_VOL_CTL_B2_CTL:
+		case TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL:
+		case TAIKO_A_RX_LINE_1_GAIN:
+		case TAIKO_A_RX_LINE_2_GAIN:
+		case TAIKO_A_RX_LINE_3_GAIN:
+		case TAIKO_A_RX_LINE_4_GAIN:
 			if (snd_ctrl_locked > 0)
 				ret = 0;
 			break;
-		case TOMTOM_A_CDC_TX1_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX2_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX3_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX4_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX5_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX6_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX7_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX8_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX9_VOL_CTL_GAIN:
-		case TOMTOM_A_CDC_TX10_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX1_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX2_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX3_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX4_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX5_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX6_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX7_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX8_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX9_VOL_CTL_GAIN:
+		case TAIKO_A_CDC_TX10_VOL_CTL_GAIN:
 			if (snd_rec_ctrl_locked > 0)
 				ret = 0;
 			break;
@@ -198,8 +198,8 @@ static ssize_t cam_mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
         return sprintf(buf, "%u\n",
-		tomtom_read(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_TX3_VOL_CTL_GAIN));
+		taiko_read(fauxsound_codec_ptr,
+			TAIKO_A_CDC_TX3_VOL_CTL_GAIN));
 
 }
 
@@ -211,8 +211,8 @@ static ssize_t cam_mic_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u", &lval, &chksum);
 
 	if (calc_checksum(lval, 0, chksum)) {
-		tomtom_write(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_TX3_VOL_CTL_GAIN, lval);
+		taiko_write(fauxsound_codec_ptr,
+			TAIKO_A_CDC_TX3_VOL_CTL_GAIN, lval);
 	}
 	return count;
 }
@@ -221,8 +221,8 @@ static ssize_t mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u\n",
-		tomtom_read(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_TX2_VOL_CTL_GAIN));
+		taiko_read(fauxsound_codec_ptr,
+			TAIKO_A_CDC_TX2_VOL_CTL_GAIN));
 }
 
 static ssize_t mic_gain_store(struct kobject *kobj,
@@ -233,8 +233,8 @@ static ssize_t mic_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u", &lval, &chksum);
 
 	if (calc_checksum(lval, 0, chksum)) {
-		tomtom_write(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_TX2_VOL_CTL_GAIN, lval);
+		taiko_write(fauxsound_codec_ptr,
+			TAIKO_A_CDC_TX2_VOL_CTL_GAIN, lval);
 	}
 	return count;
 
@@ -244,10 +244,10 @@ static ssize_t speaker_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
         return sprintf(buf, "%u %u\n",
-			tomtom_read(fauxsound_codec_ptr,
-				TOMTOM_A_CDC_RX7_VOL_CTL_B2_CTL),
-			tomtom_read(fauxsound_codec_ptr,
-				TOMTOM_A_CDC_RX7_VOL_CTL_B2_CTL));
+			taiko_read(fauxsound_codec_ptr,
+				TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL),
+			taiko_read(fauxsound_codec_ptr,
+				TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL));
 
 }
 
@@ -259,10 +259,10 @@ static ssize_t speaker_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
 	if (calc_checksum(lval, rval, chksum)) {
-		tomtom_write(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_RX7_VOL_CTL_B2_CTL, lval);
-		tomtom_write(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_RX7_VOL_CTL_B2_CTL, rval);
+		taiko_write(fauxsound_codec_ptr,
+			TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL, lval);
+		taiko_write(fauxsound_codec_ptr,
+			TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL, rval);
 	}
 	return count;
 }
@@ -271,10 +271,10 @@ static ssize_t headphone_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u %u\n",
-			tomtom_read(fauxsound_codec_ptr,
-				TOMTOM_A_CDC_RX1_VOL_CTL_B2_CTL),
-			tomtom_read(fauxsound_codec_ptr,
-				TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL));
+			taiko_read(fauxsound_codec_ptr,
+				TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL),
+			taiko_read(fauxsound_codec_ptr,
+				TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL));
 }
 
 static ssize_t headphone_gain_store(struct kobject *kobj,
@@ -285,10 +285,10 @@ static ssize_t headphone_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
 	if (calc_checksum(lval, rval, chksum)) {
-		tomtom_write(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_RX1_VOL_CTL_B2_CTL, lval);
-		tomtom_write(fauxsound_codec_ptr,
-			TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL, rval);
+		taiko_write(fauxsound_codec_ptr,
+			TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL, lval);
+		taiko_write(fauxsound_codec_ptr,
+			TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL, rval);
 	}
 	return count;
 }
@@ -297,8 +297,8 @@ static ssize_t headphone_pa_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u %u\n",
-		tomtom_read(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_L_GAIN),
-		tomtom_read(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_R_GAIN));
+		taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_L_GAIN),
+		taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_R_GAIN));
 }
 
 static ssize_t headphone_pa_gain_store(struct kobject *kobj,
@@ -311,21 +311,21 @@ static ssize_t headphone_pa_gain_store(struct kobject *kobj,
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
 	if (calc_checksum(lval, rval, chksum)) {
-	gain = tomtom_read(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_L_GAIN);
+	gain = taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_L_GAIN);
 	out = (gain & 0xf0) | lval;
-	tomtom_write(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_L_GAIN, out);
+	taiko_write(fauxsound_codec_ptr, TAIKO_A_RX_HPH_L_GAIN, out);
 
-	status = tomtom_read(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_L_STATUS);
+	status = taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_L_STATUS);
 	out = (status & 0x0f) | (lval << 4);
-	tomtom_write(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_L_STATUS, out);
+	taiko_write(fauxsound_codec_ptr, TAIKO_A_RX_HPH_L_STATUS, out);
 
-	gain = tomtom_read(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_R_GAIN);
+	gain = taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_R_GAIN);
 	out = (gain & 0xf0) | rval;
-	tomtom_write(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_R_GAIN, out);
+	taiko_write(fauxsound_codec_ptr, TAIKO_A_RX_HPH_R_GAIN, out);
 
-	status = tomtom_read(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_R_STATUS);
+	status = taiko_read(fauxsound_codec_ptr, TAIKO_A_RX_HPH_R_STATUS);
 	out = (status & 0x0f) | (rval << 4);
-	tomtom_write(fauxsound_codec_ptr, TOMTOM_A_RX_HPH_R_STATUS, out);
+	taiko_write(fauxsound_codec_ptr, TAIKO_A_RX_HPH_R_STATUS, out);
 	}
 	return count;
 }
@@ -347,7 +347,7 @@ static ssize_t sound_reg_read_show(struct kobject *kobj,
 		return -1;
 	else
 		return sprintf(buf, "%u\n",
-			tomtom_read(fauxsound_codec_ptr, selected_reg));
+			taiko_read(fauxsound_codec_ptr, selected_reg));
 }
 
 static ssize_t sound_reg_write_store(struct kobject *kobj,
@@ -358,7 +358,7 @@ static ssize_t sound_reg_write_store(struct kobject *kobj,
 	sscanf(buf, "%u %u", &out, &chksum);
 	if (calc_checksum(out, 0, chksum)) {
 		if (selected_reg != 0xdeadbeef)
-			tomtom_write(fauxsound_codec_ptr, selected_reg, out);
+			taiko_write(fauxsound_codec_ptr, selected_reg, out);
 	}
 	return count;
 }
