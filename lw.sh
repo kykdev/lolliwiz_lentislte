@@ -94,10 +94,13 @@ echo ""
 
 rm -f ramdisk/*.gz
 cd ramdisk/kt
+if [ ! -e data ]; then mkdir data dev proc sys system;fi
 find . | cpio -o -H newc | gzip > ../initrd_kt.gz
 cd ../skt
+if [ ! -e data ]; then mkdir data dev proc sys system;fi
 find . | cpio -o -H newc | gzip > ../initrd_skt.gz
 cd ../lgu
+if [ ! -e data ]; then mkdir data dev proc sys system;fi
 find . | cpio -o -H newc | gzip > ../initrd_lgu.gz
 cd ../..
 
