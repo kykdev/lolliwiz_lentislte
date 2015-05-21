@@ -5,7 +5,7 @@ declare -i JOBS
 export JOBS=2*$(grep -c processor /proc/cpuinfo)
 
 function build_bootimg {
-  ./mkbootimg --kernel arch/arm/boot/zImage --ramdisk ramdisk/initrd_$variant.gz --cmdline "console=null androidboot.hardware=qcom user_debug=23 msm_rtb.filter=0x3b7 dwc3_msm.cpu_to_affin=1" --base 0x00000000 --pagesize 4096 --dt dt.img --ramdisk_offset 0x02600000 --tags_offset 0x02400000 --output boot_$variant.img
+  ./mkbootimg --kernel arch/arm/boot/zImage --ramdisk ramdisk/initrd_$variant.lz4 --cmdline "console=null androidboot.hardware=qcom user_debug=23 msm_rtb.filter=0x3b7 dwc3_msm.cpu_to_affin=1" --base 0x00000000 --pagesize 4096 --dt dt.img --ramdisk_offset 0x02600000 --tags_offset 0x02400000 --output boot_$variant.img
   echo SEANDROIDENFORCE >> boot_$variant.img
 }
 
@@ -92,16 +92,16 @@ echo "Compressing ramdisk"
 echo "==================="
 echo ""
 
-rm -f ramdisk/*.gz
+rm -f ramdisk/*.lz4
 cd ramdisk/kt
 if [ ! -e data ]; then mkdir data dev proc sys system;fi
-find . | cpio -o -H newc | gzip > ../initrd_kt.gz
+find . \( ! -regex '.*/\..*' \) | cpio -o -H newc -R root:root | lz4c -l -c1 stdin ../initrd_kt.lz4;
 cd ../skt
 if [ ! -e data ]; then mkdir data dev proc sys system;fi
-find . | cpio -o -H newc | gzip > ../initrd_skt.gz
+find . \( ! -regex '.*/\..*' \) | cpio -o -H newc -R root:root | lz4c -l -c1 stdin ../initrd_skt.lz4;
 cd ../lgu
 if [ ! -e data ]; then mkdir data dev proc sys system;fi
-find . | cpio -o -H newc | gzip > ../initrd_lgu.gz
+find . \( ! -regex '.*/\..*' \) | cpio -o -H newc -R root:root | lz4c -l -c1 stdin ../initrd_lgu.lz4;
 cd ../..
 
 if [ "$2" = "all" -o "$2" = "kt" ]; then
