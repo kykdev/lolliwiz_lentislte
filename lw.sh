@@ -86,6 +86,21 @@ echo ""
 tools/dtbTool -o dt.img -s 4096 -p scripts/dtc/ arch/arm/boot/dts/
 chmod a+r dt.img
 
+echo ""
+echo "==================="
+echo "Compressing ramdisk"
+echo "==================="
+echo ""
+
+rm -f ramdisk/*.gz
+cd ramdisk/kt
+find . | cpio -o -H newc | gzip > ../initrd_kt.gz
+cd ../skt
+find . | cpio -o -H newc | gzip > ../initrd_skt.gz
+cd ../lgu
+find . | cpio -o -H newc | gzip > ../initrd_lgu.gz
+cd ../..
+
 if [ "$2" = "all" -o "$2" = "kt" ]; then
   echo ""
   echo "======================"
