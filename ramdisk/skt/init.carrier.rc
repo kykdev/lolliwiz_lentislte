@@ -40,6 +40,9 @@ on boot
     chown system system /dev/tdmb
     chmod 0660 /dev/tdmb
 
+# Permissions for usb_lock
+    chown system radio /sys/class/android_usb/android0/usb_lock
+
 # SSWAP
     write /proc/sys/vm/swappiness 130
 
