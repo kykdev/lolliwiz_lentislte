@@ -1,8 +1,21 @@
 #!/bin/bash
 # Automatic script for Lolliwiz Kernel
 
+BOLD=$(tput bold)
+RED=$(tput setaf 1)
+CYAN=$(tput setaf 6)
+RESET=$(tput sgr0)
+
 declare -i JOBS
 export JOBS=2*$(grep -c processor /proc/cpuinfo)
+
+function echocyan {
+  echo $BOLD$CYAN▶ $1$RESET
+}
+
+function echored {
+  echo $BOLD$RED▶ $1$RESET
+}
 
 function build_bootimg {
   ./mkbootimg --kernel arch/arm/boot/zImage --ramdisk ramdisk/initrd_$variant.gz --cmdline "console=null androidboot.hardware=qcom user_debug=31 msm_rtb.filter=0x37 dwc3_msm.cpu_to_affin=1" --base 0x00000000 --pagesize 4096 --dt dt.img --ramdisk_offset 0x02200000 --tags_offset 0x02000000 --output boot_$variant.img
@@ -13,55 +26,40 @@ function install_bootimg {
   if [ -e boot_$variant.img ]; then
     if [ "$(adb devices|grep '	recovery')" != "" ]; then
       echo ""
-      echo "==========================="
-      echo "Installing in recovery mode"
-      echo "==========================="
-      echo ""
+      echocyan "Installing in recovery mode"
       adb push boot_$variant.img /tmp/boot.img
       adb shell dd if=/tmp/boot.img of=/dev/block/platform/msm_sdcc.1/by-name/boot
     elif [ "$(adb devices|grep '	device')" != "" ]; then
       echo ""
-      echo "========================="
-      echo "Installing in normal mode"
-      echo "========================="
-      echo ""
+      echocyan "Installing in normal mode"
       adb push boot_$variant.img /data/local/tmp/boot.img
       adb shell su -c dd if=/data/local/tmp/boot.img of=/dev/block/platform/msm_sdcc.1/by-name/boot
       adb reboot
     else
-      echo "ERROR: Device not found, make sure your device has USB Debugging option enabled."
+      echored "ERROR: Device not found, make sure your device has USB Debugging option enabled."
       exit 1
     fi
     echo ""
-    echo "====================="
-    echo "Installation complete"
-    echo "====================="
-    echo ""
+    echocyan "Installation complete"
   else
-    echo "ERROR: No boot.img found, run build first."
+    echored "ERROR: No boot.img found, run build first."
   fi
 }
 
 if [ "$1" = "build" ]; then
 
 if [ "$2" != "kt" -a "$2" != "skt" -a "$2" != "lgu" -a "$2" != "all" ]; then
-  echo "ERROR: You must specify correct build option : kt / skt / lgu / all"
+  echored "ERROR: You must specify correct build option : kt / skt / lgu / all"
   exit 1
 fi   
 
 echo ""
-echo "===================="
-echo "Setting up defconfig"
-echo "===================="
-echo ""
+echocyan "Setting up defconfig"
 
 make lw_defconfig
 
 echo ""
-echo "==============="
-echo "Building Kernel"
-echo "==============="
-echo ""
+echocyan "Building Kernel"
 
 [ -e arch/arm/boot/zImage ] && mv arch/arm/boot/zImage arch/arm/boot/zImage.old
 make -j"$JOBS"
@@ -70,27 +68,18 @@ if [ -e arch/arm/boot/zImage ]; then
 else
   [ -e arch/arm/boot/zImage.old ] && mv arch/arm/boot/zImage.old arch/arm/boot/zImage
   echo ""
-  echo "==============="
-  echo "Build FAILED!!!"
-  echo "==============="
-  echo ""
+  echored "Build FAILED!"
   exit 1
 fi
 
 echo ""
-echo "================="
-echo "Building DT Image"
-echo "================="
-echo ""
+echocyan "Building DT Image"
 
 tools/dtbTool -o dt.img -s 4096 -p scripts/dtc/ arch/arm/boot/dts/
 chmod a+r dt.img
 
 echo ""
-echo "==================="
-echo "Compressing ramdisk"
-echo "==================="
-echo ""
+echocyan "Compressing ramdisk"
 
 rm -f ramdisk/*.gz
 cd ramdisk/kt
@@ -106,38 +95,25 @@ cd ../..
 
 if [ "$2" = "all" -o "$2" = "kt" ]; then
   echo ""
-  echo "======================"
-  echo "Building boot.img : KT"
-  echo "======================"
-  echo ""
+  echocyan "Building boot.img : KT"
   export variant=kt
   build_bootimg
 fi
 if [ "$2" = "all" -o "$2" = "skt" ]; then
   echo ""
-  echo "======================="
-  echo "Building boot.img : SKT"
-  echo "======================="
-  echo ""
+  echocyan "Building boot.img : SKT"
   export variant=skt
   build_bootimg
 fi
 if [ "$2" = "all" -o "$2" = "lgu" ]; then
   echo ""
-  echo "======================="
-  echo "Building boot.img : LGU"
-  echo "======================="
-  echo ""
+  echocyan "Building boot.img : LGU"
   export variant=lgu
   build_bootimg
 fi
 
 echo ""
-echo "==================="
-echo "PROCESS COMPLETE!"
-echo "OUTPUT : boot_*.img"
-echo "==================="
-echo ""
+echocyan "BUILD COMPLETE!"
 
 elif [ "$1" = "clean" ]; then
 
@@ -152,7 +128,7 @@ elif [ "$1" = "saveconfig" ]; then
 if [ -e .config ]; then
   cp .config arch/arm/configs/lw_defconfig
 else
-  echo "ERROR: .config NOT FOUND"
+  echored "ERROR: .config NOT FOUND"
 fi
 
 elif [ "$1" = "install" ]; then
@@ -164,13 +140,13 @@ elif [ "$2" = "skt" ]; then
 elif [ "$2" = "lgu" ]; then
   export variant=lgu
 else
-  echo "ERROR: You must specify correct install option : kt / skt / lgu"
+  echored "ERROR: You must specify correct install option : kt / skt / lgu"
   exit 1
 fi
 install_bootimg
 
 else
 
-echo "Usage: ./lw.sh [build all/kt/sk/lgu / clean / saveconfig / install kt/sk/lgu]"
+echocyan "Usage: ./lw.sh [build all/kt/sk/lgu / clean / saveconfig / install kt/sk/lgu]"
 
 fi
