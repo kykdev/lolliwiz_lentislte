@@ -36,7 +36,7 @@
 #define DEF_UP_TIMER_CNT	(2)	/* 1 sec */
 #define MAX_CORES_SCREENOFF (2)
 #define MAX_FREQ_SCREENOFF (1190400)
-#define MAX_FREQ_PLUG (2457600)
+#define MAX_FREQ_PLUG (2649600)
 
 static unsigned int up_threshold = UP_THRESHOLD;;
 static unsigned int delay = DELAY;
@@ -363,7 +363,7 @@ static int set_max_freq_screenoff(const char *val, const struct kernel_param *kp
 	ret = kstrtouint(val, 10, &i);
 	if (ret)
 		return -EINVAL;
-	if (i < 300000 || i > 2457600)
+	if (i < 300000 || i > 2649600)
 		return -EINVAL;
 
 	ret = param_set_uint(val, kp);
