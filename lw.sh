@@ -61,13 +61,8 @@ make lw_defconfig
 echo ""
 echocyan "Building Kernel"
 
-[ -e arch/arm/boot/zImage ] && mv arch/arm/boot/zImage arch/arm/boot/zImage.old
 make -j"$JOBS"
-if [ -e arch/arm/boot/zImage ]; then
-  rm -f arch/arm/boot/zImage.old
-else
-  [ -e arch/arm/boot/zImage.old ] && mv arch/arm/boot/zImage.old arch/arm/boot/zImage
-  echo ""
+if [ ! "$?" -eq 0 ]; then
   echored "Build FAILED!"
   exit 1
 fi
