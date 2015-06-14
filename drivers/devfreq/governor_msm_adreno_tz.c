@@ -61,7 +61,6 @@ static DEFINE_SPINLOCK(tz_lock);
 /* Boolean to detect if pm has entered suspend mode */
 static bool suspended = false;
 
-#if 0
 /* Trap into the TrustZone, and call funcs there. */
 static int __secure_tz_entry2(u32 cmd, u32 val1, u32 val2)
 {
@@ -73,7 +72,6 @@ static int __secure_tz_entry2(u32 cmd, u32 val1, u32 val2)
 	spin_unlock(&tz_lock);
 	return ret;
 }
-#endif
 
 static int __secure_tz_entry3(u32 cmd, u32 val1, u32 val2, u32 val3)
 {
