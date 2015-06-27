@@ -30,11 +30,18 @@ function install_bootimg {
       adb push boot_$variant.img /tmp/boot.img
       adb shell dd if=/tmp/boot.img of=/dev/block/platform/msm_sdcc.1/by-name/boot
     elif [ "$(adb devices|grep '	device')" != "" ]; then
-      echo ""
-      echocyan "Installing in normal mode"
-      adb push boot_$variant.img /data/local/tmp/boot.img
-      adb shell su -c dd if=/data/local/tmp/boot.img of=/dev/block/platform/msm_sdcc.1/by-name/boot
-      adb reboot
+      if [ "$(adb shell ls /|grep twres)" != "" ]; then
+        echo ""
+        echocyan "Installing in recovery mode"
+        adb push boot_$variant.img /tmp/boot.img
+        adb shell dd if=/tmp/boot.img of=/dev/block/platform/msm_sdcc.1/by-name/boot
+      else
+        echo ""
+        echocyan "Installing in normal mode"
+        adb push boot_$variant.img /data/local/tmp/boot.img
+        adb shell su -c dd if=/data/local/tmp/boot.img of=/dev/block/platform/msm_sdcc.1/by-name/boot
+        adb reboot
+      fi
     else
       echored "ERROR: Device not found, make sure your device has USB Debugging option enabled."
       exit 1
