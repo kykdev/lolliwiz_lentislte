@@ -79,6 +79,14 @@ repeat:
 		f2fs_put_page(page, 1);
 		goto repeat;
 	}
+
+	/*
+	 * if there is any IO error when accessing device, make our filesystem
+	 * readonly and make sure do not write checkpoint with non-uptodate
+	 * meta page.
+	 */
+	if (unlikely(!PageUptodate(page)))
+		f2fs_stop_checkpoint(sbi);
 out:
 	mark_page_accessed(page);
 	return page;
@@ -461,24 +469,34 @@ void remove_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 	__remove_ino_entry(sbi, ino, ORPHAN_INO);
 }
 
-static void recover_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
+static int recover_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 {
-	struct inode *inode = f2fs_iget(sbi->sb, ino);
-	f2fs_bug_on(sbi, IS_ERR(inode));
+	struct inode *inode;
+
+	inode = f2fs_iget(sbi->sb, ino);
+	if (IS_ERR(inode)) {
+		/*
+		 * there should be a bug that we can't find the entry
+		 * to orphan inode.
+		 */
+		f2fs_bug_on(sbi, PTR_ERR(inode) == -ENOENT);
+		return PTR_ERR(inode);
+	}
+
 	clear_nlink(inode);
 
 	/* truncate all the data during iput */
 	iput(inode);
+	return 0;
 }
 
-void recover_orphan_inodes(struct f2fs_sb_info *sbi)
+int recover_orphan_inodes(struct f2fs_sb_info *sbi)
 {
 	block_t start_blk, orphan_blocks, i, j;
+	int err;
 
 	if (!is_set_ckpt_flags(F2FS_CKPT(sbi), CP_ORPHAN_PRESENT_FLAG))
-		return;
-
-	set_sbi_flag(sbi, SBI_POR_DOING);
+		return 0;
 
 	start_blk = __start_cp_addr(sbi) + 1 + __cp_payload(sbi);
 	orphan_blocks = __start_sum_addr(sbi) - 1 - __cp_payload(sbi);
@@ -492,14 +510,17 @@ void recover_orphan_inodes(struct f2fs_sb_info *sbi)
 		orphan_blk = (struct f2fs_orphan_block *)page_address(page);
 		for (j = 0; j < le32_to_cpu(orphan_blk->entry_count); j++) {
 			nid_t ino = le32_to_cpu(orphan_blk->ino[j]);
-			recover_orphan_inode(sbi, ino);
+			err = recover_orphan_inode(sbi, ino);
+			if (err) {
+				f2fs_put_page(page, 1);
+				return err;
+			}
 		}
 		f2fs_put_page(page, 1);
 	}
 	/* clear Orphan Flag */
 	clear_ckpt_flags(F2FS_CKPT(sbi), CP_ORPHAN_PRESENT_FLAG);
-	clear_sbi_flag(sbi, SBI_POR_DOING);
-	return;
+	return 0;
 }
 
 static void write_orphan_inodes(struct f2fs_sb_info *sbi, block_t start_blk)
@@ -889,12 +910,15 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	__u32 crc32 = 0;
 	int i;
 	int cp_payload_blks = __cp_payload(sbi);
+	block_t discard_blk = NEXT_FREE_BLKADDR(sbi, curseg);
+	bool invalidate = false;
 
 	/*
 	 * This avoids to conduct wrong roll-forward operations and uses
 	 * metapages, so should be called prior to sync_meta_pages below.
 	 */
-	discard_next_dnode(sbi, NEXT_FREE_BLKADDR(sbi, curseg));
+	if (discard_next_dnode(sbi, discard_blk))
+		invalidate = true;
 
 	/* Flush all the NAT/SIT pages */
 	while (get_pages(sbi, F2FS_DIRTY_META)) {
@@ -1022,6 +1046,14 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 
 	/* wait for previous submitted meta pages writeback */
 	wait_on_all_pages_writeback(sbi);
+
+	/*
+	 * invalidate meta page which is used temporarily for zeroing out
+	 * block at the end of warm node chain.
+	 */
+	if (invalidate)
+		invalidate_mapping_pages(META_MAPPING(sbi), discard_blk,
+								discard_blk);
 
 	release_dirty_inode(sbi);
 

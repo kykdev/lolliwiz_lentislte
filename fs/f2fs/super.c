@@ -422,7 +422,6 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
 	fi->i_current_depth = 1;
 	fi->i_advise = 0;
 	init_rwsem(&fi->i_sem);
-	INIT_RADIX_TREE(&fi->inmem_root, GFP_NOFS);
 	INIT_LIST_HEAD(&fi->inmem_pages);
 	mutex_init(&fi->inmem_lock);
 
@@ -1165,7 +1164,9 @@ try_onemore:
 	mutex_init(&sbi->writepages);
 	mutex_init(&sbi->cp_mutex);
 	init_rwsem(&sbi->node_write);
-	clear_sbi_flag(sbi, SBI_POR_DOING);
+
+	/* disallow all the data/node/meta page writes */
+	set_sbi_flag(sbi, SBI_POR_DOING);
 	spin_lock_init(&sbi->stat_lock);
 
 	init_rwsem(&sbi->read_io.io_rwsem);
@@ -1245,7 +1246,9 @@ try_onemore:
 	f2fs_join_shrinker(sbi);
 
 	/* if there are nt orphan nodes free them */
-	recover_orphan_inodes(sbi);
+	err = recover_orphan_inodes(sbi);
+	if (err)
+		goto free_node_inode;
 
 	/* read root inode and dentry */
 	root = f2fs_iget(sb, F2FS_ROOT_INO(sbi));
@@ -1307,6 +1310,8 @@ try_onemore:
 			goto free_kobj;
 		}
 	}
+	/* recover_fsync_data() cleared this already */
+	clear_sbi_flag(sbi, SBI_POR_DOING);
 
 	/*
 	 * If filesystem is not mounted as read-only then

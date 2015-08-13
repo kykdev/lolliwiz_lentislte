@@ -552,8 +552,7 @@ static void move_encrypted_block(struct inode *inode, block_t bidx)
 	fio.page = page;
 	fio.blk_addr = dn.data_blkaddr;
 
-	fio.encrypted_page = grab_cache_page(META_MAPPING(fio.sbi),
-						fio.blk_addr);
+	fio.encrypted_page = grab_cache_page(META_MAPPING(fio.sbi), fio.blk_addr);
 	if (!fio.encrypted_page)
 		goto put_out;
 
@@ -568,6 +567,11 @@ static void move_encrypted_block(struct inode *inode, block_t bidx)
 		goto put_page_out;
 	if (unlikely(fio.encrypted_page->mapping != META_MAPPING(fio.sbi)))
 		goto put_page_out;
+
+	set_page_dirty(fio.encrypted_page);
+	f2fs_wait_on_page_writeback(fio.encrypted_page, META);
+	if (clear_page_dirty_for_io(fio.encrypted_page))
+		dec_page_count(fio.sbi, F2FS_DIRTY_META);
 
 	set_page_writeback(fio.encrypted_page);
 
@@ -613,8 +617,8 @@ static void move_data_page(struct inode *inode, block_t bidx, int gc_type)
 			.page = page,
 			.encrypted_page = NULL,
 		};
+		set_page_dirty(page);
 		f2fs_wait_on_page_writeback(page, DATA);
-
 		if (clear_page_dirty_for_io(page))
 			inode_dec_dirty_pages(inode);
 		set_cold_data(page);
@@ -785,7 +789,8 @@ static void do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
 
 int f2fs_gc(struct f2fs_sb_info *sbi)
 {
-	unsigned int segno, i;
+	unsigned int segno = NULL_SEGNO;
+	unsigned int i;
 	int gc_type = BG_GC;
 	int nfree = 0;
 	int ret = -1;
@@ -804,10 +809,11 @@ gc_more:
 
 	if (gc_type == BG_GC && has_not_enough_free_secs(sbi, nfree)) {
 		gc_type = FG_GC;
-		write_checkpoint(sbi, &cpc);
+		if (__get_victim(sbi, &segno, gc_type) || prefree_segments(sbi))
+			write_checkpoint(sbi, &cpc);
 	}
 
-	if (!__get_victim(sbi, &segno, gc_type))
+	if (segno == NULL_SEGNO && !__get_victim(sbi, &segno, gc_type))
 		goto stop;
 	ret = 0;
 

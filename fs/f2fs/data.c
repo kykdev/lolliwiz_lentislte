@@ -264,6 +264,19 @@ int f2fs_reserve_block(struct dnode_of_data *dn, pgoff_t index)
 	return err;
 }
 
+int f2fs_get_block(struct dnode_of_data *dn, pgoff_t index)
+{
+	struct extent_info ei;
+	struct inode *inode = dn->inode;
+
+	if (f2fs_lookup_extent_cache(inode, index, &ei)) {
+		dn->data_blkaddr = ei.blk + index - ei.fofs;
+		return 0;
+	}
+
+	return f2fs_reserve_block(dn, index);
+}
+
 struct page *get_read_data_page(struct inode *inode, pgoff_t index, int rw)
 {
 	struct address_space *mapping = inode->i_mapping;
@@ -1384,19 +1397,20 @@ repeat:
 		if (err)
 			goto put_fail;
 	}
-	err = f2fs_reserve_block(&dn, index);
+
+	err = f2fs_get_block(&dn, index);
 	if (err)
 		goto put_fail;
 put_next:
 	f2fs_put_dnode(&dn);
 	f2fs_unlock_op(sbi);
 
+	f2fs_wait_on_page_writeback(page, DATA);
+
 	if (len == PAGE_CACHE_SIZE)
 		goto out_update;
 	if (PageUptodate(page))
 		goto out_clear;
-
-	f2fs_wait_on_page_writeback(page, DATA);
 
 	if ((pos & PAGE_CACHE_MASK) >= i_size_read(inode)) {
 		unsigned start = pos & (PAGE_CACHE_SIZE - 1);
@@ -1476,22 +1490,44 @@ static int f2fs_write_end(struct file *file,
 	return copied;
 }
 
-static int check_direct_IO(struct inode *inode, int rw,
+static ssize_t check_direct_IO(struct inode *inode, int rw,
 		const struct iovec *iov, loff_t offset, unsigned long nr_segs)
 {
 	unsigned blocksize_mask = inode->i_sb->s_blocksize - 1;
-	int i;
-
-	if (rw == READ)
-		return 0;
+	int seg, i;
+	size_t size;
+	unsigned long addr;
+	ssize_t retval = -EINVAL;
+	loff_t end = offset;
 
 	if (offset & blocksize_mask)
 		return -EINVAL;
 
-	for (i = 0; i < nr_segs; i++)
-		if (iov[i].iov_len & blocksize_mask)
-			return -EINVAL;
-	return 0;
+	/* Check the memory alignment.  Blocks cannot straddle pages */
+	for (seg = 0; seg < nr_segs; seg++) {
+		addr = (unsigned long)iov[seg].iov_base;
+		size = iov[seg].iov_len;
+		end += size;
+		if ((addr & blocksize_mask) || (size & blocksize_mask))
+			goto out;
+
+		/* If this is a write we don't need to check anymore */
+		if (rw & WRITE)
+			continue;
+
+		/*
+		 * Check to make sure we don't have duplicate iov_base's in this
+		 * iovec, if so return EINVAL, otherwise we'll get csum errors
+		 * when reading back.
+		 */
+		for (i = seg + 1; i < nr_segs; i++) {
+			if (iov[seg].iov_base == iov[i].iov_base)
+				goto out;
+		}
+	}
+	retval = 0;
+out:
+	return retval;
 }
 
 static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb,
@@ -1514,8 +1550,9 @@ static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb,
 	if (f2fs_encrypted_inode(inode) && S_ISREG(inode->i_mode))
 		return 0;
 
-	if (check_direct_IO(inode, rw, iov, offset, nr_segs))
-		return 0;
+	err = check_direct_IO(inode, rw, iov, offset, nr_segs);
+	if (err)
+		return err;
 
 	trace_f2fs_direct_IO_enter(inode, offset, count, rw);
 
@@ -1548,6 +1585,11 @@ void f2fs_invalidate_page(struct page *page, unsigned long offset)
 		else
 			inode_dec_dirty_pages(inode);
 	}
+
+	/* This is atomic written page, keep Private */
+	if (IS_ATOMIC_WRITTEN_PAGE(page))
+		return;
+
 	ClearPagePrivate(page);
 }
 
@@ -1555,6 +1597,10 @@ int f2fs_release_page(struct page *page, gfp_t wait)
 {
 	/* If this is dirty page, keep PagePrivate */
 	if (PageDirty(page))
+		return 0;
+
+	/* This is atomic written page, keep Private */
+	if (IS_ATOMIC_WRITTEN_PAGE(page))
 		return 0;
 
 	ClearPagePrivate(page);
@@ -1571,11 +1617,16 @@ static int f2fs_set_data_page_dirty(struct page *page)
 	SetPageUptodate(page);
 
 	if (f2fs_is_atomic_file(inode)) {
-		register_inmem_page(inode, page);
-		return 1;
+		if (!IS_ATOMIC_WRITTEN_PAGE(page)) {
+			register_inmem_page(inode, page);
+			return 1;
+		}
+		/*
+		 * Previously, this page has been registered, we just
+		 * return here.
+		 */
+		return 0;
 	}
-
-	mark_inode_dirty(inode);
 
 	if (!PageDirty(page)) {
 		__set_page_dirty_nobuffers(page);
