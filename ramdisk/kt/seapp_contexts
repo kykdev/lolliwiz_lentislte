@@ -21,6 +21,9 @@ user=_app seinfo=platform name=com.sec.android.app.controlpanel domain=bridged_p
 user=_app seinfo=platform name=com.sec.minimode.taskcloser domain=bridged_platform_app type=platform_app_data_file
 user=sprintextension name=com.sec.sprextension domain=s_system_app type=system_app_data_file
 user=sprintextension seinfo=spr_ext name=com.sec.sprextension domain=s_system_app type=system_app_data_file
+user=_app seinfo=spay domain=platform_app type=platform_app_data_file
+user=spay seinfo=spay domain=platform_app type=platform_app_data_file
+user=system seinfo=platform name=com.sec.android.inputmethod domain=ime_app type=system_app_data_file
 isSystemServer=true domain=system_server
 user=shared_relro domain=shared_relro
 user=shell seinfo=platform domain=shell type=shell_data_file
@@ -59,6 +62,7 @@ user=_app seinfo=untrusted name=com.google.android.marvin.talkback domain=knox_u
 user=_app seinfo=fixmo domain=fixmo_app type=fixmo_app_data_file
 user=_app seinfo=trustonicpartner domain=trustonicpartner_app type=app_data_file
 user=_app seinfo=good_trustonicpartner domain=trustonicpartner_app type=app_data_file
+user=_app seinfo=umcjsagent domain=umcagent_app type=app_data_file
 user=_app seinfo=vpn_untrusted name=net.juniper.junos.pulse.android domain=vpn_untrusted_app type=app_data_file
 user=_app seinfo=vpn_untrusted name=net.juniper.junos.pulse.android:remote domain=vpn_untrusted_app type=app_data_file
 user=_app seinfo=vmware domain=vmware_app type=app_data_file
@@ -68,5 +72,6 @@ user=itson seinfo=sprintitson domain=itsonclient_app type=sprintitson_file
 user=_app seinfo=mmphone domain=carrier_app type=app_data_file
 user=system seinfo=platform name=diagandroid.iqd domain=diagandroid_app type=system_app_data_file
 user=_app seinfo=tmosimlock name=com.tmobile.simlock domain=filtered_untrusted_app type=app_data_file
+user=_app seinfo=tmosimlock name=com.metro.simlock domain=filtered_untrusted_app type=app_data_file
 user=_app seinfo=tbaseplatform domain=carrier_app type=app_data_file
 user=system seinfo=lguiwlan domain=system_app type=system_app_data_file
