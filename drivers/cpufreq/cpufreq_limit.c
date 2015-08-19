@@ -28,11 +28,6 @@ struct cpufreq_limit_handle {
 static DEFINE_MUTEX(cpufreq_limit_lock);
 static LIST_HEAD(cpufreq_limit_requests);
 
-#ifdef CONFIG_SEC_PM
-static int suspend_boost = 1190400;
-module_param(suspend_boost, uint, 0644);
-#endif
-
 /**
  * cpufreq_limit_get - limit min_freq or max_freq, return cpufreq_limit_handle
  * @min_freq	limit minimum frequency (0: none)
@@ -179,39 +174,6 @@ static struct attribute_group limit_attr_group = {
 	.name = "cpufreq_limit",
 };
 
-#ifdef CONFIG_SEC_PM
-#  ifdef CONFIG_SUSPEND_BOOSTER
-static int cpufreq_limit_suspend_handler(struct notifier_block *nb,
-				unsigned long val, void *data)
-{
-	static struct cpufreq_limit_handle *cpufreq_suspend;
-
-	switch (val) {
-	case PM_SUSPEND_PREPARE:
-		pr_info("%s: limit suspend_boost %d\n", __func__, suspend_boost);
-		cpufreq_suspend = cpufreq_limit_min_freq(suspend_boost, "cpufreq_suspend");
-		if (IS_ERR(cpufreq_suspend)) {
-			pr_err("%s: fail to get the handle\n", __func__);
-			goto out;
-		}
-
-		break;
-
-	case PM_POST_SUSPEND:
-		pr_info("%s: release suspend_boost\n", __func__);
-		cpufreq_limit_put(cpufreq_suspend);
-		break;
-
-	default:
-		return NOTIFY_DONE;
-	}
-
-out:
-	return NOTIFY_OK;
-}
-#  endif
-#endif
-
 static int __init cpufreq_limit_init(void)
 {
 	int ret;
@@ -229,12 +191,6 @@ static int __init cpufreq_limit_init(void)
 		if (ret)
 			cpufreq_put_global_kobject();
 	}
-
-#ifdef CONFIG_SEC_PM
-#  ifdef CONFIG_SUSPEND_BOOSTER
-	pm_notifier(cpufreq_limit_suspend_handler, 0);
-#  endif 
-#endif
 
 	return ret;
 }
