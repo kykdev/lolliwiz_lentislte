@@ -588,7 +588,7 @@ static int binder_update_page_range(struct binder_proc *proc, int allocate,
 		page = &proc->pages[(page_addr - proc->buffer) / PAGE_SIZE];
 
 		BUG_ON(*page);
-		*page = alloc_page(GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO);
+		*page = alloc_page(GFP_HIGHUSER);
 		if (*page == NULL) {
 			pr_err("%d: binder_alloc_buf failed for page at %p\n",
 				proc->pid, page_addr);
@@ -2718,6 +2718,30 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			goto err;
 		}
 		break;
+
+	/* { System SW, SA_SAMP */
+	// SAMP : Service Process Management
+	case BINDER_GET_PROC_BINDERSTATS: {
+		//get proc stats,(bc_transactions/br_transactions)
+		//used for the binded service
+		int transactions;
+		if (size != sizeof(int)) {
+			ret = -EINVAL;
+			goto err;
+		}
+
+		//Only consider the called times now
+		transactions = proc->stats.br[_IOC_NR(BR_TRANSACTION)] /*+ proc->stats.bc[_IOC_NR(BC_TRANSACTION)] */;
+
+		binder_debug(BINDER_DEBUG_READ_WRITE,
+			"-- BINDER_GET_PROC_BINDERSTATS transactions = %d\n", transactions);
+		if (put_user(transactions, (uint32_t __user *)ubuf)) {
+			ret = -EINVAL;
+			goto err;
+		}
+		break;
+		}
+	/* System SW, SA_SAMP } */
 	default:
 		ret = -EINVAL;
 		goto err;

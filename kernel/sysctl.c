@@ -106,6 +106,8 @@ extern unsigned int core_pipe_limit;
 #endif
 extern int pid_max;
 extern int extra_free_kbytes;
+extern int min_free_kbytes;
+extern int wmark_min_kbytes, wmark_low_kbytes, wmark_high_kbytes;
 extern int min_free_order_shift;
 extern int pid_max_min, pid_max_max;
 extern int percpu_pagelist_fraction;
@@ -1068,6 +1070,16 @@ static struct ctl_table kern_table[] = {
 		.maxlen		= sizeof(sysctl_perf_event_sample_rate),
 		.mode		= 0644,
 		.proc_handler	= perf_proc_update_handler,
+		.extra1		= &one,
+	},
+	{
+		.procname	= "perf_cpu_time_max_percent",
+		.data		= &sysctl_perf_cpu_time_max_percent,
+		.maxlen		= sizeof(sysctl_perf_cpu_time_max_percent),
+		.mode		= 0644,
+		.proc_handler	= perf_cpu_time_max_percent_handler,
+		.extra1		= &zero,
+		.extra2		= &one_hundred,
 	},
 #endif
 #ifdef CONFIG_KMEMCHECK
@@ -1105,6 +1117,32 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 #endif
+	{
+		.procname	= "wmark_min_kbytes",
+		.data		= &wmark_min_kbytes,
+		.maxlen		= sizeof(wmark_min_kbytes),
+		.mode		= 0644,
+		.proc_handler	= wmark_min_kbytes_sysctl_handler,
+		.extra1		= &zero,
+		.extra2		= &wmark_low_kbytes,
+	},
+	{
+		.procname	= "wmark_low_kbytes",
+		.data		= &wmark_low_kbytes,
+		.maxlen		= sizeof(wmark_low_kbytes),
+		.mode		= 0644,
+		.proc_handler	= wmark_low_kbytes_sysctl_handler,
+		.extra1		= &wmark_min_kbytes,
+		.extra2		= &wmark_high_kbytes,
+	},
+	{
+		.procname	= "wmark_high_kbytes",
+		.data		= &wmark_high_kbytes,
+		.maxlen		= sizeof(wmark_high_kbytes),
+		.mode		= 0644,
+		.proc_handler	= wmark_high_kbytes_sysctl_handler,
+		.extra1		= &wmark_low_kbytes,
+	},
 /*
  * NOTE: do not add new entries to this table unless you have read
  * Documentation/sysctl/ctl_unnumbered.txt
@@ -1201,6 +1239,33 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= dirty_writeback_centisecs_handler,
 	},
+#ifdef CONFIG_DYNAMIC_PAGE_WRITEBACK
+	{
+		.procname	= "dynamic_dirty_writeback",
+		.data		= &dyn_dirty_writeback_enabled,
+		.maxlen		= sizeof(dyn_dirty_writeback_enabled),
+		.mode		= 0644,
+		.proc_handler	= dynamic_dirty_writeback_handler,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+	{
+		.procname	= "dirty_writeback_active_centisecs",
+		.data		= &dirty_writeback_active_interval,
+		.maxlen		= sizeof(dirty_writeback_active_interval),
+		.mode		= 0644,
+		.proc_handler	= dirty_writeback_active_centisecs_handler,
+		.extra1		= &zero,
+	},
+	{
+		.procname	= "dirty_writeback_suspend_centisecs",
+		.data		= &dirty_writeback_suspend_interval,
+		.maxlen		= sizeof(dirty_writeback_suspend_interval),
+		.mode		= 0644,
+		.proc_handler	= dirty_writeback_suspend_centisecs_handler,
+		.extra1		= &zero,
+	},
+#endif
 	{
 		.procname	= "dirty_expire_centisecs",
 		.data		= &dirty_expire_interval,
@@ -1293,7 +1358,7 @@ static struct ctl_table vm_table[] = {
 		.procname	= "compact_memory",
 		.data		= &sysctl_compact_memory,
 		.maxlen		= sizeof(int),
-		.mode		= 0200,
+		.mode		= 0644,
 		.proc_handler	= sysctl_compaction_handler,
 	},
 	{
