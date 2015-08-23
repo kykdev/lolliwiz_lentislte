@@ -1,0 +1,12 @@
+package_extract_dir("kernel", "/tmp/lolliwiz");
+set_perm(0, 0, 0777, "/tmp/lolliwiz/unpackbootimg");
+set_perm(0, 0, 0777, "/tmp/lolliwiz/mkbootimg");
+set_perm(0, 0, 0777, "/tmp/lolliwiz/kernel.sh");
+run_program("/tmp/lolliwiz/kernel.sh");
+delete_recursive("/tmp/lolliwiz");
+
+run_program("/sbin/busybox", "mount", "-t", "auto", "/system");
+package_extract_dir("modules", "/system/lib/modules");
+unmount("/system");
+
+ui_print("Successfully flashed. Now reboot your device.");
