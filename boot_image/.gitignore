@@ -1,1 +1,5 @@
 *.img
+*.zip
+
+dokdo/kernel/zImage
+dokdo/modules/*.ko
