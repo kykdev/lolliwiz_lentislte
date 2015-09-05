@@ -573,7 +573,4 @@ static inline int cpufreq_generic_exit(struct cpufreq_policy *policy)
 	return 0;
 }
 
-extern bool touch_boosted;
-extern int prev_policy_min;
-extern int exposed_policy_min;
 #endif /* _LINUX_CPUFREQ_H */
