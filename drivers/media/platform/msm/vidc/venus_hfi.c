@@ -2168,6 +2168,7 @@ static int venus_hfi_core_release(void *device)
 	}
 
 	if (dev->hal_client) {
+		cancel_delayed_work_sync(&venus_hfi_pm_work); 
 		if (venus_hfi_power_enable(device)) {
 			dprintk(VIDC_ERR,
 				"%s: Power enable failed\n", __func__);
@@ -3757,7 +3758,6 @@ static void venus_hfi_unload_fw(void *dev)
 	}
 	if (device->resources.fw.cookie) {
 		flush_workqueue(device->vidc_workq);
-		cancel_delayed_work(&venus_hfi_pm_work);
 		flush_workqueue(device->venus_pm_workq);
 		subsystem_put(device->resources.fw.cookie);
 		venus_hfi_interface_queues_release(dev);
