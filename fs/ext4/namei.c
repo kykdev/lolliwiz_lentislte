@@ -3220,7 +3220,11 @@ static int ext4_find_delete_entry(handle_t *handle, struct inode *dir,
 	struct buffer_head *bh;
 	struct ext4_dir_entry_2 *de;
 
+#ifdef CONFIG_SDCARD_FS_CI_SEARCH
+	bh = ext4_find_entry(dir, d_name, &de, NULL, NULL);
+#else
 	bh = ext4_find_entry(dir, d_name, &de, NULL);
+#endif
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 	if (bh) {
