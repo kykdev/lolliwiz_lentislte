@@ -207,5 +207,5 @@ source "drivers/media/tdmb/Kconfig"
 
 # ISDBT Drivers
 #
-source "drivers/media/isdbt/Kconfig"
+#source "drivers/media/isdbt/Kconfig"
 endif # MEDIA_SUPPORT
