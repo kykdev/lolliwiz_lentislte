@@ -22,6 +22,11 @@
 #include <linux/pwm.h>
 #include <linux/err.h>
 #include <linux/lcd.h>
+
+#ifdef CONFIG_STATE_NOTIFIER
+#include <linux/state_notifier.h>
+#endif
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
@@ -2121,6 +2126,10 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_STATE_NOTIFIER
+	state_resume();
+#endif
+
 	pr_info("%s : ++\n", __func__);
 
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
@@ -2253,6 +2262,10 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_STATE_NOTIFIER
+	state_suspend();
+#endif
 
 	pr_info("%s : ++\n",__func__);
 
