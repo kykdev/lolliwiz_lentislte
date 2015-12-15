@@ -328,6 +328,20 @@ config FW_LOGS_BASED_ON_INI
 	---help---
 	  If set this configuration, FW log level will be set by ini configuration file.
 
+config BUS_AUTO_SUSPEND
+	bool "Enable/Disable Runtime PM support for PCIe based WLAN Drivers"
+	depends on CNSS
+	depends on PCI
+	---help---
+	  Runtime Power Management is supported for PCIe based WLAN Drivers.
+	  The features enable cld wlan driver to suspend pcie bus when APPS
+	  is awake based on the driver inactivity with the Firmware.
+	  The Feature uses runtime power management framework from kernel to
+	  track bus access clients and to synchronize the driver activity
+	  during system pm.
+	  This config flag controls the feature per target based. The feature
+	  requires CNSS driver support.
+
 config WCNSS_CORE_PRONTO
 	tristate "Qualcomm WCNSS Pronto Support"
 	depends on WCNSS_CORE
