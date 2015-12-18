@@ -538,12 +538,11 @@ static inline void init_hrtick(void)
  * might also involve a cross-CPU call to trigger the scheduler on
  * the target CPU.
  */
-#ifdef CONFIG_SMP
 void resched_task(struct task_struct *p)
 {
 	int cpu;
 
-	assert_raw_spin_locked(&task_rq(p)->lock);
+	lockdep_assert_held(&task_rq(p)->lock);
 
 	if (test_tsk_need_resched(p))
 		return;
@@ -551,8 +550,10 @@ void resched_task(struct task_struct *p)
 	set_tsk_need_resched(p);
 
 	cpu = task_cpu(p);
-	if (cpu == smp_processor_id())
+	if (cpu == smp_processor_id()) {
+		set_preempt_need_resched();
 		return;
+	}
 
 	/* NEED_RESCHED must be visible before we test polling */
 	smp_mb();
@@ -571,6 +572,7 @@ void resched_cpu(int cpu)
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 }
 
+#ifdef CONFIG_SMP
 #ifdef CONFIG_NO_HZ_COMMON
 /*
  * In the semi idle case, use the nearest busy cpu for migrating timers
@@ -718,12 +720,6 @@ void sched_avg_update(struct rq *rq)
 	}
 }
 
-#else /* !CONFIG_SMP */
-void resched_task(struct task_struct *p)
-{
-	assert_raw_spin_locked(&task_rq(p)->lock);
-	set_tsk_need_resched(p);
-}
 #endif /* CONFIG_SMP */
 
 #if defined(CONFIG_RT_GROUP_SCHED) || (defined(CONFIG_FAIR_GROUP_SCHED) && \
@@ -792,7 +788,7 @@ static void set_load_weight(struct task_struct *p)
 static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	update_rq_clock(rq);
-	sched_info_queued(p);
+	sched_info_queued(rq, p);
 	p->sched_class->enqueue_task(rq, p, flags);
 	trace_sched_enq_deq_task(p, 1);
 	inc_cumulative_runnable_avg(rq, p);
@@ -801,7 +797,7 @@ static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 static void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	update_rq_clock(rq);
-	sched_info_dequeued(p);
+	sched_info_dequeued(rq, p);
 	p->sched_class->dequeue_task(rq, p, flags);
 	trace_sched_enq_deq_task(p, 0);
 	dec_cumulative_runnable_avg(rq, p);
@@ -1016,7 +1012,7 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 	 * ttwu() will sort out the placement.
 	 */
 	WARN_ON_ONCE(p->state != TASK_RUNNING && p->state != TASK_WAKING &&
-			!(task_thread_info(p)->preempt_count & PREEMPT_ACTIVE));
+			!(task_preempt_count(p) & PREEMPT_ACTIVE));
 
 #ifdef CONFIG_LOCKDEP
 	/*
@@ -1487,10 +1483,11 @@ ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 		u64 delta = rq_clock(rq) - rq->idle_stamp;
 		u64 max = 2*sysctl_sched_migration_cost;
 
-		if (delta > max)
+		update_avg(&rq->avg_idle, delta);
+
+		if (rq->avg_idle > max)
 			rq->avg_idle = max;
-		else
-			update_avg(&rq->avg_idle, delta);
+
 		rq->idle_stamp = 0;
 	}
 #endif
@@ -1551,6 +1548,14 @@ static void sched_ttwu_pending(void)
 
 void scheduler_ipi(void)
 {
+	/*
+	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting
+	 * TIF_NEED_RESCHED remotely (for the first time) will also send
+	 * this IPI.
+	 */
+	if (tif_need_resched())
+		set_preempt_need_resched();
+
 	if (llist_empty(&this_rq()->wake_list)
 			&& !tick_nohz_full_cpu(smp_processor_id())
 			&& !got_nohz_idle_kick())
@@ -1907,10 +1912,7 @@ void sched_fork(struct task_struct *p)
 #if defined(CONFIG_SMP)
 	p->on_cpu = 0;
 #endif
-#ifdef CONFIG_PREEMPT_COUNT
-	/* Want to start with kernel preemption disabled. */
-	task_thread_info(p)->preempt_count = 1;
-#endif
+	init_task_preempt_count(p);
 #ifdef CONFIG_SMP
 	plist_node_init(&p->pushable_tasks, MAX_PRIO);
 #endif
@@ -2028,7 +2030,7 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 		    struct task_struct *next)
 {
 	trace_sched_switch(prev, next);
-	sched_info_switch(prev, next);
+	sched_info_switch(rq, prev, next);
 	perf_event_task_sched_out(prev, next);
 	fire_sched_out_preempt_notifiers(prev, next);
 	prepare_lock_switch(rq, next);
@@ -2966,6 +2968,20 @@ unsigned long long task_sched_runtime(struct task_struct *p)
 	struct rq *rq;
 	u64 ns = 0;
 
+#if defined(CONFIG_64BIT) && defined(CONFIG_SMP)
+	/*
+	 * 64-bit doesn't need locks to atomically read a 64bit value.
+	 * So we have a optimization chance when the task's delta_exec is 0.
+	 * Reading ->on_cpu is racy, but this is ok.
+	 *
+	 * If we race with it leaving cpu, we'll take a lock. So we're correct.
+	 * If we race with it entering cpu, unaccounted time is 0. This is
+	 * indistinguishable from the read occurring a few cycles earlier.
+	 */
+	if (!p->on_cpu)
+		return p->se.sum_exec_runtime;
+#endif
+
 	rq = task_rq_lock(p, &flags);
 	ns = p->se.sum_exec_runtime + do_task_delta_exec(p, rq);
 	task_rq_unlock(rq, p, &flags);
@@ -3041,7 +3057,7 @@ notrace unsigned long get_parent_ip(unsigned long addr)
 #if defined(CONFIG_PREEMPT) && (defined(CONFIG_DEBUG_PREEMPT) || \
 				defined(CONFIG_PREEMPT_TRACER))
 
-void __kprobes add_preempt_count(int val)
+void __kprobes preempt_count_add(int val)
 {
 #ifdef CONFIG_DEBUG_PREEMPT
 	/*
@@ -3050,7 +3066,7 @@ void __kprobes add_preempt_count(int val)
 	if (DEBUG_LOCKS_WARN_ON((preempt_count() < 0)))
 		return;
 #endif
-	preempt_count() += val;
+	__preempt_count_add(val);
 #ifdef CONFIG_DEBUG_PREEMPT
 	/*
 	 * Spinlock count overflowing soon?
@@ -3061,9 +3077,9 @@ void __kprobes add_preempt_count(int val)
 	if (preempt_count() == val)
 		trace_preempt_off(CALLER_ADDR0, get_parent_ip(CALLER_ADDR1));
 }
-EXPORT_SYMBOL(add_preempt_count);
+EXPORT_SYMBOL(preempt_count_add);
 
-void __kprobes sub_preempt_count(int val)
+void __kprobes preempt_count_sub(int val)
 {
 #ifdef CONFIG_DEBUG_PREEMPT
 	/*
@@ -3081,9 +3097,9 @@ void __kprobes sub_preempt_count(int val)
 
 	if (preempt_count() == val)
 		trace_preempt_on(CALLER_ADDR0, get_parent_ip(CALLER_ADDR1));
-	preempt_count() -= val;
+	__preempt_count_sub(val);
 }
-EXPORT_SYMBOL(sub_preempt_count);
+EXPORT_SYMBOL(preempt_count_sub);
 
 #endif
 
@@ -3113,10 +3129,10 @@ static inline void schedule_debug(struct task_struct *prev)
 {
 	/*
 	 * Test if we are atomic. Since do_exit() needs to call into
-	 * schedule() atomically, we ignore that path for now.
-	 * Otherwise, whine if we are scheduling when we should not be.
+	 * schedule() atomically, we ignore that path. Otherwise whine
+	 * if we are scheduling when we should not.
 	 */
-	if (unlikely(in_atomic_preempt_off() && !prev->exit_state))
+	if (unlikely(in_atomic_preempt_off() && prev->state != TASK_DEAD))
 		__schedule_bug(prev);
 	rcu_sleep_check();
 
@@ -3261,6 +3277,7 @@ need_resched:
 	put_prev_task(rq, prev);
 	next = pick_next_task(rq);
 	clear_tsk_need_resched(prev);
+	clear_preempt_need_resched();
 	rq->skip_clock_update = 0;
 
 	if (likely(prev != next)) {
@@ -3347,19 +3364,17 @@ void __sched schedule_preempt_disabled(void)
  */
 asmlinkage void __sched notrace preempt_schedule(void)
 {
-	struct thread_info *ti = current_thread_info();
-
 	/*
 	 * If there is a non-zero preempt_count or interrupts are disabled,
 	 * we do not want to preempt the current task. Just return..
 	 */
-	if (likely(ti->preempt_count || irqs_disabled()))
+	if (likely(!preemptible()))
 		return;
 
 	do {
-		add_preempt_count_notrace(PREEMPT_ACTIVE);
+		__preempt_count_add(PREEMPT_ACTIVE);
 		__schedule();
-		sub_preempt_count_notrace(PREEMPT_ACTIVE);
+		__preempt_count_sub(PREEMPT_ACTIVE);
 
 		/*
 		 * Check again in case we missed a preemption opportunity
@@ -3369,6 +3384,7 @@ asmlinkage void __sched notrace preempt_schedule(void)
 	} while (need_resched());
 }
 EXPORT_SYMBOL(preempt_schedule);
+#endif /* CONFIG_PREEMPT */
 
 /*
  * this is the entry point to schedule() from kernel preemption
@@ -3378,20 +3394,19 @@ EXPORT_SYMBOL(preempt_schedule);
  */
 asmlinkage void __sched preempt_schedule_irq(void)
 {
-	struct thread_info *ti = current_thread_info();
 	enum ctx_state prev_state;
 
 	/* Catch callers which need to be fixed */
-	BUG_ON(ti->preempt_count || !irqs_disabled());
+	BUG_ON(preempt_count() || !irqs_disabled());
 
 	prev_state = exception_enter();
 
 	do {
-		add_preempt_count(PREEMPT_ACTIVE);
+		__preempt_count_add(PREEMPT_ACTIVE);
 		local_irq_enable();
 		__schedule();
 		local_irq_disable();
-		sub_preempt_count(PREEMPT_ACTIVE);
+		__preempt_count_sub(PREEMPT_ACTIVE);
 
 		/*
 		 * Check again in case we missed a preemption opportunity
@@ -3403,401 +3418,12 @@ asmlinkage void __sched preempt_schedule_irq(void)
 	exception_exit(prev_state);
 }
 
-#endif /* CONFIG_PREEMPT */
-
 int default_wake_function(wait_queue_t *curr, unsigned mode, int wake_flags,
 			  void *key)
 {
 	return try_to_wake_up(curr->private, mode, wake_flags);
 }
 EXPORT_SYMBOL(default_wake_function);
-
-/*
- * The core wakeup function. Non-exclusive wakeups (nr_exclusive == 0) just
- * wake everything up. If it's an exclusive wakeup (nr_exclusive == small +ve
- * number) then we wake all the non-exclusive tasks and one exclusive task.
- *
- * There are circumstances in which we can try to wake a task which has already
- * started to run but is not in state TASK_RUNNING. try_to_wake_up() returns
- * zero in this (rare) case, and we handle it by continuing to scan the queue.
- */
-static void __wake_up_common(wait_queue_head_t *q, unsigned int mode,
-			int nr_exclusive, int wake_flags, void *key)
-{
-	wait_queue_t *curr, *next;
-
-	list_for_each_entry_safe(curr, next, &q->task_list, task_list) {
-		unsigned flags = curr->flags;
-
-		if (curr->func(curr, mode, wake_flags, key) &&
-				(flags & WQ_FLAG_EXCLUSIVE) && !--nr_exclusive)
-			break;
-	}
-}
-
-/**
- * __wake_up - wake up threads blocked on a waitqueue.
- * @q: the waitqueue
- * @mode: which threads
- * @nr_exclusive: how many wake-one or wake-many threads to wake up
- * @key: is directly passed to the wakeup function
- *
- * It may be assumed that this function implies a write memory barrier before
- * changing the task state if and only if any tasks are woken up.
- */
-void __wake_up(wait_queue_head_t *q, unsigned int mode,
-			int nr_exclusive, void *key)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&q->lock, flags);
-	__wake_up_common(q, mode, nr_exclusive, 0, key);
-	spin_unlock_irqrestore(&q->lock, flags);
-}
-EXPORT_SYMBOL(__wake_up);
-
-/*
- * Same as __wake_up but called with the spinlock in wait_queue_head_t held.
- */
-void __wake_up_locked(wait_queue_head_t *q, unsigned int mode, int nr)
-{
-	__wake_up_common(q, mode, nr, 0, NULL);
-}
-EXPORT_SYMBOL_GPL(__wake_up_locked);
-
-void __wake_up_locked_key(wait_queue_head_t *q, unsigned int mode, void *key)
-{
-	__wake_up_common(q, mode, 1, 0, key);
-}
-EXPORT_SYMBOL_GPL(__wake_up_locked_key);
-
-/**
- * __wake_up_sync_key - wake up threads blocked on a waitqueue.
- * @q: the waitqueue
- * @mode: which threads
- * @nr_exclusive: how many wake-one or wake-many threads to wake up
- * @key: opaque value to be passed to wakeup targets
- *
- * The sync wakeup differs that the waker knows that it will schedule
- * away soon, so while the target thread will be woken up, it will not
- * be migrated to another CPU - ie. the two threads are 'synchronized'
- * with each other. This can prevent needless bouncing between CPUs.
- *
- * On UP it can prevent extra preemption.
- *
- * It may be assumed that this function implies a write memory barrier before
- * changing the task state if and only if any tasks are woken up.
- */
-void __wake_up_sync_key(wait_queue_head_t *q, unsigned int mode,
-			int nr_exclusive, void *key)
-{
-	unsigned long flags;
-	int wake_flags = WF_SYNC;
-
-	if (unlikely(!q))
-		return;
-
-	if (unlikely(nr_exclusive != 1))
-		wake_flags = 0;
-
-	spin_lock_irqsave(&q->lock, flags);
-	__wake_up_common(q, mode, nr_exclusive, wake_flags, key);
-	spin_unlock_irqrestore(&q->lock, flags);
-}
-EXPORT_SYMBOL_GPL(__wake_up_sync_key);
-
-/*
- * __wake_up_sync - see __wake_up_sync_key()
- */
-void __wake_up_sync(wait_queue_head_t *q, unsigned int mode, int nr_exclusive)
-{
-	__wake_up_sync_key(q, mode, nr_exclusive, NULL);
-}
-EXPORT_SYMBOL_GPL(__wake_up_sync);	/* For internal use only */
-
-/**
- * complete: - signals a single thread waiting on this completion
- * @x:  holds the state of this particular completion
- *
- * This will wake up a single thread waiting on this completion. Threads will be
- * awakened in the same order in which they were queued.
- *
- * See also complete_all(), wait_for_completion() and related routines.
- *
- * It may be assumed that this function implies a write memory barrier before
- * changing the task state if and only if any tasks are woken up.
- */
-void complete(struct completion *x)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&x->wait.lock, flags);
-	x->done++;
-	__wake_up_common(&x->wait, TASK_NORMAL, 1, 0, NULL);
-	spin_unlock_irqrestore(&x->wait.lock, flags);
-}
-EXPORT_SYMBOL(complete);
-
-/**
- * complete_all: - signals all threads waiting on this completion
- * @x:  holds the state of this particular completion
- *
- * This will wake up all threads waiting on this particular completion event.
- *
- * It may be assumed that this function implies a write memory barrier before
- * changing the task state if and only if any tasks are woken up.
- */
-void complete_all(struct completion *x)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&x->wait.lock, flags);
-	x->done += UINT_MAX/2;
-	__wake_up_common(&x->wait, TASK_NORMAL, 0, 0, NULL);
-	spin_unlock_irqrestore(&x->wait.lock, flags);
-}
-EXPORT_SYMBOL(complete_all);
-
-static inline long __sched
-do_wait_for_common(struct completion *x,
-		   long (*action)(long), long timeout, int state)
-{
-	if (!x->done) {
-		DECLARE_WAITQUEUE(wait, current);
-
-		__add_wait_queue_tail_exclusive(&x->wait, &wait);
-		do {
-			if (signal_pending_state(state, current)) {
-				timeout = -ERESTARTSYS;
-				break;
-			}
-			__set_current_state(state);
-			spin_unlock_irq(&x->wait.lock);
-			timeout = action(timeout);
-			spin_lock_irq(&x->wait.lock);
-		} while (!x->done && timeout);
-		__remove_wait_queue(&x->wait, &wait);
-		if (!x->done)
-			return timeout;
-	}
-	x->done--;
-	return timeout ?: 1;
-}
-
-static inline long __sched
-__wait_for_common(struct completion *x,
-		  long (*action)(long), long timeout, int state)
-{
-	might_sleep();
-
-	spin_lock_irq(&x->wait.lock);
-	timeout = do_wait_for_common(x, action, timeout, state);
-	spin_unlock_irq(&x->wait.lock);
-	return timeout;
-}
-
-static long __sched
-wait_for_common(struct completion *x, long timeout, int state)
-{
-	return __wait_for_common(x, schedule_timeout, timeout, state);
-}
-
-static long __sched
-wait_for_common_io(struct completion *x, long timeout, int state)
-{
-	return __wait_for_common(x, io_schedule_timeout, timeout, state);
-}
-
-/**
- * wait_for_completion: - waits for completion of a task
- * @x:  holds the state of this particular completion
- *
- * This waits to be signaled for completion of a specific task. It is NOT
- * interruptible and there is no timeout.
- *
- * See also similar routines (i.e. wait_for_completion_timeout()) with timeout
- * and interrupt capability. Also see complete().
- */
-void __sched wait_for_completion(struct completion *x)
-{
-	wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_UNINTERRUPTIBLE);
-}
-EXPORT_SYMBOL(wait_for_completion);
-
-/**
- * wait_for_completion_timeout: - waits for completion of a task (w/timeout)
- * @x:  holds the state of this particular completion
- * @timeout:  timeout value in jiffies
- *
- * This waits for either a completion of a specific task to be signaled or for a
- * specified timeout to expire. The timeout is in jiffies. It is not
- * interruptible.
- *
- * Return: 0 if timed out, and positive (at least 1, or number of jiffies left
- * till timeout) if completed.
- */
-unsigned long __sched
-wait_for_completion_timeout(struct completion *x, unsigned long timeout)
-{
-	return wait_for_common(x, timeout, TASK_UNINTERRUPTIBLE);
-}
-EXPORT_SYMBOL(wait_for_completion_timeout);
-
-/**
- * wait_for_completion_io: - waits for completion of a task
- * @x:  holds the state of this particular completion
- *
- * This waits to be signaled for completion of a specific task. It is NOT
- * interruptible and there is no timeout. The caller is accounted as waiting
- * for IO.
- */
-void __sched wait_for_completion_io(struct completion *x)
-{
-	wait_for_common_io(x, MAX_SCHEDULE_TIMEOUT, TASK_UNINTERRUPTIBLE);
-}
-EXPORT_SYMBOL(wait_for_completion_io);
-
-/**
- * wait_for_completion_io_timeout: - waits for completion of a task (w/timeout)
- * @x:  holds the state of this particular completion
- * @timeout:  timeout value in jiffies
- *
- * This waits for either a completion of a specific task to be signaled or for a
- * specified timeout to expire. The timeout is in jiffies. It is not
- * interruptible. The caller is accounted as waiting for IO.
- *
- * Return: 0 if timed out, and positive (at least 1, or number of jiffies left
- * till timeout) if completed.
- */
-unsigned long __sched
-wait_for_completion_io_timeout(struct completion *x, unsigned long timeout)
-{
-	return wait_for_common_io(x, timeout, TASK_UNINTERRUPTIBLE);
-}
-EXPORT_SYMBOL(wait_for_completion_io_timeout);
-
-/**
- * wait_for_completion_interruptible: - waits for completion of a task (w/intr)
- * @x:  holds the state of this particular completion
- *
- * This waits for completion of a specific task to be signaled. It is
- * interruptible.
- *
- * Return: -ERESTARTSYS if interrupted, 0 if completed.
- */
-int __sched wait_for_completion_interruptible(struct completion *x)
-{
-	long t = wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_INTERRUPTIBLE);
-	if (t == -ERESTARTSYS)
-		return t;
-	return 0;
-}
-EXPORT_SYMBOL(wait_for_completion_interruptible);
-
-/**
- * wait_for_completion_interruptible_timeout: - waits for completion (w/(to,intr))
- * @x:  holds the state of this particular completion
- * @timeout:  timeout value in jiffies
- *
- * This waits for either a completion of a specific task to be signaled or for a
- * specified timeout to expire. It is interruptible. The timeout is in jiffies.
- *
- * Return: -ERESTARTSYS if interrupted, 0 if timed out, positive (at least 1,
- * or number of jiffies left till timeout) if completed.
- */
-long __sched
-wait_for_completion_interruptible_timeout(struct completion *x,
-					  unsigned long timeout)
-{
-	return wait_for_common(x, timeout, TASK_INTERRUPTIBLE);
-}
-EXPORT_SYMBOL(wait_for_completion_interruptible_timeout);
-
-/**
- * wait_for_completion_killable: - waits for completion of a task (killable)
- * @x:  holds the state of this particular completion
- *
- * This waits to be signaled for completion of a specific task. It can be
- * interrupted by a kill signal.
- *
- * Return: -ERESTARTSYS if interrupted, 0 if completed.
- */
-int __sched wait_for_completion_killable(struct completion *x)
-{
-	long t = wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_KILLABLE);
-	if (t == -ERESTARTSYS)
-		return t;
-	return 0;
-}
-EXPORT_SYMBOL(wait_for_completion_killable);
-
-/**
- * wait_for_completion_killable_timeout: - waits for completion of a task (w/(to,killable))
- * @x:  holds the state of this particular completion
- * @timeout:  timeout value in jiffies
- *
- * This waits for either a completion of a specific task to be
- * signaled or for a specified timeout to expire. It can be
- * interrupted by a kill signal. The timeout is in jiffies.
- *
- * Return: -ERESTARTSYS if interrupted, 0 if timed out, positive (at least 1,
- * or number of jiffies left till timeout) if completed.
- */
-long __sched
-wait_for_completion_killable_timeout(struct completion *x,
-				     unsigned long timeout)
-{
-	return wait_for_common(x, timeout, TASK_KILLABLE);
-}
-EXPORT_SYMBOL(wait_for_completion_killable_timeout);
-
-/**
- *	try_wait_for_completion - try to decrement a completion without blocking
- *	@x:	completion structure
- *
- *	Return: 0 if a decrement cannot be done without blocking
- *		 1 if a decrement succeeded.
- *
- *	If a completion is being used as a counting completion,
- *	attempt to decrement the counter without blocking. This
- *	enables us to avoid waiting if the resource the completion
- *	is protecting is not available.
- */
-bool try_wait_for_completion(struct completion *x)
-{
-	unsigned long flags;
-	int ret = 1;
-
-	spin_lock_irqsave(&x->wait.lock, flags);
-	if (!x->done)
-		ret = 0;
-	else
-		x->done--;
-	spin_unlock_irqrestore(&x->wait.lock, flags);
-	return ret;
-}
-EXPORT_SYMBOL(try_wait_for_completion);
-
-/**
- *	completion_done - Test to see if a completion has any waiters
- *	@x:	completion structure
- *
- *	Return: 0 if there are waiters (wait_for_completion() in progress)
- *		 1 if there are no waiters.
- *
- */
-bool completion_done(struct completion *x)
-{
-	unsigned long flags;
-	int ret = 1;
-
-	spin_lock_irqsave(&x->wait.lock, flags);
-	if (!x->done)
-		ret = 0;
-	spin_unlock_irqrestore(&x->wait.lock, flags);
-	return ret;
-}
-EXPORT_SYMBOL(completion_done);
 
 static long __sched
 sleep_on_common(wait_queue_head_t *q, int state, long timeout)
@@ -4441,7 +4067,6 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 	p = find_process_by_pid(pid);
 	if (!p) {
 		rcu_read_unlock();
-		put_online_cpus();
 		return -ESRCH;
 	}
 
@@ -4631,16 +4256,11 @@ SYSCALL_DEFINE0(sched_yield)
 	return 0;
 }
 
-static inline int should_resched(void)
-{
-	return need_resched() && !(preempt_count() & PREEMPT_ACTIVE);
-}
-
 static void __cond_resched(void)
 {
-	add_preempt_count(PREEMPT_ACTIVE);
+	__preempt_count_add(PREEMPT_ACTIVE);
 	__schedule();
-	sub_preempt_count(PREEMPT_ACTIVE);
+	__preempt_count_sub(PREEMPT_ACTIVE);
 }
 
 int __sched _cond_resched(void)
@@ -4761,7 +4381,7 @@ again:
 	}
 
 	double_rq_lock(rq, p_rq);
-	while (task_rq(p) != p_rq) {
+	if (task_rq(p) != p_rq) {
 		double_rq_unlock(rq, p_rq);
 		goto again;
 	}
@@ -5050,7 +4670,7 @@ void __cpuinit init_idle(struct task_struct *idle, int cpu)
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
 	/* Set the preempt count _outside_ the spinlocks! */
-	task_thread_info(idle)->preempt_count = 0;
+	init_idle_preempt_count(idle, cpu);
 
 	/*
 	 * The idle tasks have their own, simple scheduling class:
@@ -5795,7 +5415,8 @@ sd_parent_degenerate(struct sched_domain *sd, struct sched_domain *parent)
 				SD_BALANCE_FORK |
 				SD_BALANCE_EXEC |
 				SD_SHARE_CPUPOWER |
-				SD_SHARE_PKG_RESOURCES);
+				SD_SHARE_PKG_RESOURCES |
+				SD_PREFER_SIBLING);
 		if (nr_node_ids == 1)
 			pflags &= ~SD_SERIALIZE;
 	}
@@ -6000,6 +5621,13 @@ cpu_attach_domain(struct sched_domain *sd, struct root_domain *rd, int cpu)
 			tmp->parent = parent->parent;
 			if (parent->parent)
 				parent->parent->child = tmp;
+			/*
+			 * Transfer SD_PREFER_SIBLING down in case of a
+			 * degenerate parent; the spans match for this
+			 * so the property transfers.
+			 */
+			if (parent->flags & SD_PREFER_SIBLING)
+				tmp->flags |= SD_PREFER_SIBLING;
 			destroy_sched_domain(parent, cpu);
 		} else
 			tmp = tmp->parent;
@@ -6172,6 +5800,7 @@ build_overlap_sched_groups(struct sched_domain *sd, int cpu)
 		 * die on a /0 trap.
 		 */
 		sg->sgp->power = SCHED_POWER_SCALE * cpumask_weight(sg_span);
+		sg->sgp->power_orig = sg->sgp->power;
 
 		/*
 		 * Make sure the first group of this domain contains the
@@ -7077,8 +6706,9 @@ match1:
 		;
 	}
 
+	n = ndoms_cur;
 	if (doms_new == NULL) {
-		ndoms_cur = 0;
+		n = 0;
 		doms_new = &fallback_doms;
 		cpumask_andnot(doms_new[0], cpu_active_mask, cpu_isolated_map);
 		WARN_ON_ONCE(dattr_new);
@@ -7086,7 +6716,7 @@ match1:
 
 	/* Build new domains */
 	for (i = 0; i < ndoms_new; i++) {
-		for (j = 0; j < ndoms_cur && !new_topology; j++) {
+		for (j = 0; j < n && !new_topology; j++) {
 			if (cpumask_equal(doms_new[i], doms_cur[j])
 			    && dattrs_equal(dattr_new, i, dattr_cur, j))
 				goto match2;
