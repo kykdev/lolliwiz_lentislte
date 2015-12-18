@@ -670,26 +670,6 @@ static u64 sched_vslice(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	return calc_delta_fair(sched_slice(cfs_rq, se), se);
 }
 
-#ifdef CONFIG_SMP
-static inline void __update_task_entity_contrib(struct sched_entity *se);
-
-/* Give new task start runnable values to heavy its load in infant time */
-void init_task_runnable_average(struct task_struct *p)
-{
-	u32 slice;
-
-	p->se.avg.decay_count = 0;
-	slice = sched_slice(task_cfs_rq(p), &p->se) >> 10;
-	p->se.avg.runnable_avg_sum = slice;
-	p->se.avg.runnable_avg_period = slice;
-	__update_task_entity_contrib(&p->se);
-}
-#else
-void init_task_runnable_average(struct task_struct *p)
-{
-}
-#endif
-
 /*
  * Update the current task's runtime statistics. Skip current tasks that
  * are not in our scheduling class.
@@ -714,7 +694,7 @@ __update_curr(struct cfs_rq *cfs_rq, struct sched_entity *curr,
 static void update_curr(struct cfs_rq *cfs_rq)
 {
 	struct sched_entity *curr = cfs_rq->curr;
-	u64 now = rq_clock_task(rq_of(cfs_rq));
+	u64 now = rq_of(cfs_rq)->clock_task;
 	unsigned long delta_exec;
 
 	if (unlikely(!curr))
@@ -746,7 +726,7 @@ static void update_curr(struct cfs_rq *cfs_rq)
 static inline void
 update_stats_wait_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-	schedstat_set(se->statistics.wait_start, rq_clock(rq_of(cfs_rq)));
+	schedstat_set(se->statistics.wait_start, rq_of(cfs_rq)->clock);
 }
 
 /*
@@ -766,14 +746,14 @@ static void
 update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	schedstat_set(se->statistics.wait_max, max(se->statistics.wait_max,
-			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start));
+			rq_of(cfs_rq)->clock - se->statistics.wait_start));
 	schedstat_set(se->statistics.wait_count, se->statistics.wait_count + 1);
 	schedstat_set(se->statistics.wait_sum, se->statistics.wait_sum +
-			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start);
+			rq_of(cfs_rq)->clock - se->statistics.wait_start);
 #ifdef CONFIG_SCHEDSTATS
 	if (entity_is_task(se)) {
 		trace_sched_stat_wait(task_of(se),
-			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start);
+			rq_of(cfs_rq)->clock - se->statistics.wait_start);
 	}
 #endif
 	schedstat_set(se->statistics.wait_start, 0);
@@ -799,7 +779,7 @@ update_stats_curr_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	/*
 	 * We are starting a new run period:
 	 */
-	se->exec_start = rq_clock_task(rq_of(cfs_rq));
+	se->exec_start = rq_of(cfs_rq)->clock_task;
 }
 
 /**************************************************
@@ -1178,7 +1158,8 @@ void init_new_task_load(struct task_struct *p)
 		p->ravg.sum_history[i] = 0;
 }
 
-#ifdef CONFIG_SMP
+/* Only depends on SMP, FAIR_GROUP_SCHED may be removed when useful in lb */
+#if defined(CONFIG_SMP) && defined(CONFIG_FAIR_GROUP_SCHED)
 /*
  * We choose a half-life close to 1 scheduling period.
  * Note: The tables below are dependent on this value.
@@ -1408,7 +1389,7 @@ static inline void __update_tg_runnable_avg(struct sched_avg *sa,
 	long contrib;
 
 	/* The fraction of a cpu used by this cfs_rq */
-	contrib = div_u64((u64)sa->runnable_avg_sum << NICE_0_SHIFT,
+	contrib = div_u64(sa->runnable_avg_sum << NICE_0_SHIFT,
 			  sa->runnable_avg_period + 1);
 	contrib -= cfs_rq->tg_runnable_contrib;
 
@@ -1564,7 +1545,7 @@ static void update_cfs_rq_blocked_load(struct cfs_rq *cfs_rq, int force_update)
 
 static inline void update_rq_runnable_avg(struct rq *rq, int runnable)
 {
-	__update_entity_runnable_avg(rq_clock_task(rq), &rq->avg, runnable);
+	__update_entity_runnable_avg(rq->clock_task, &rq->avg, runnable);
 	__update_tg_runnable_avg(&rq->avg, &rq->cfs);
 }
 
@@ -1577,13 +1558,9 @@ static inline void enqueue_entity_load_avg(struct cfs_rq *cfs_rq,
 	 * We track migrations using entity decay_count <= 0, on a wake-up
 	 * migration we use a negative decay count to track the remote decays
 	 * accumulated while sleeping.
-	 *
-	 * Newly forked tasks are enqueued with se->avg.decay_count == 0, they
-	 * are seen by enqueue_entity_load_avg() as a migration with an already
-	 * constructed load_avg_contrib.
 	 */
 	if (unlikely(se->avg.decay_count <= 0)) {
-		se->avg.last_runnable_update = rq_clock_task(rq_of(cfs_rq));
+		se->avg.last_runnable_update = rq_of(cfs_rq)->clock_task;
 		if (se->avg.decay_count) {
 			/*
 			 * In a wake-up migration we have to approximate the
@@ -1601,13 +1578,7 @@ static inline void enqueue_entity_load_avg(struct cfs_rq *cfs_rq,
 		}
 		wakeup = 0;
 	} else {
-		/*
-		 * Task re-woke on same cpu (or else migrate_task_rq_fair()
-		 * would have made count negative); we must be careful to avoid
-		 * double-accounting blocked time after synchronizing decays.
-		 */
-		se->avg.last_runnable_update += __synchronize_entity_decay(se)
-							<< 20;
+		__synchronize_entity_decay(se);
 	}
 
 	/* migrated tasks did not contribute to our blocked load */
@@ -1684,7 +1655,7 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		tsk = task_of(se);
 
 	if (se->statistics.sleep_start) {
-		u64 delta = rq_clock(rq_of(cfs_rq)) - se->statistics.sleep_start;
+		u64 delta = rq_of(cfs_rq)->clock - se->statistics.sleep_start;
 
 		if ((s64)delta < 0)
 			delta = 0;
@@ -1701,7 +1672,7 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		}
 	}
 	if (se->statistics.block_start) {
-		u64 delta = rq_clock(rq_of(cfs_rq)) - se->statistics.block_start;
+		u64 delta = rq_of(cfs_rq)->clock - se->statistics.block_start;
 
 		if ((s64)delta < 0)
 			delta = 0;
@@ -1789,7 +1760,7 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
 	/*
 	 * Update the normalized vruntime before updating min_vruntime
-	 * through calling update_curr().
+	 * through callig update_curr().
 	 */
 	if (!(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_WAKING))
 		se->vruntime += cfs_rq->min_vruntime;
@@ -1882,9 +1853,9 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 			struct task_struct *tsk = task_of(se);
 
 			if (tsk->state & TASK_INTERRUPTIBLE)
-				se->statistics.sleep_start = rq_clock(rq_of(cfs_rq));
+				se->statistics.sleep_start = rq_of(cfs_rq)->clock;
 			if (tsk->state & TASK_UNINTERRUPTIBLE)
-				se->statistics.block_start = rq_clock(rq_of(cfs_rq));
+				se->statistics.block_start = rq_of(cfs_rq)->clock;
 		}
 #endif
 	}
@@ -2162,7 +2133,7 @@ static inline u64 cfs_rq_clock_task(struct cfs_rq *cfs_rq)
 	if (unlikely(cfs_rq->throttle_count))
 		return cfs_rq->throttled_clock_task;
 
-	return rq_clock_task(rq_of(cfs_rq)) - cfs_rq->throttled_clock_task_time;
+	return rq_of(cfs_rq)->clock_task - cfs_rq->throttled_clock_task_time;
 }
 
 /* returns 0 on failure to allocate runtime */
@@ -2218,9 +2189,10 @@ static int assign_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 static void expire_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
+	struct rq *rq = rq_of(cfs_rq);
 
 	/* if the deadline is ahead of our clock, nothing to do */
-	if (likely((s64)(rq_clock(rq_of(cfs_rq)) - cfs_rq->runtime_expires) < 0))
+	if (likely((s64)(rq->clock - cfs_rq->runtime_expires) < 0))
 		return;
 
 	if (cfs_rq->runtime_remaining < 0)
@@ -2309,7 +2281,7 @@ static int tg_unthrottle_up(struct task_group *tg, void *data)
 #ifdef CONFIG_SMP
 	if (!cfs_rq->throttle_count) {
 		/* adjust cfs_rq_clock_task() */
-		cfs_rq->throttled_clock_task_time += rq_clock_task(rq) -
+		cfs_rq->throttled_clock_task_time += rq->clock_task -
 					     cfs_rq->throttled_clock_task;
 	}
 #endif
@@ -2324,7 +2296,7 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 
 	/* group is entering throttled state, stop time */
 	if (!cfs_rq->throttle_count)
-		cfs_rq->throttled_clock_task = rq_clock_task(rq);
+		cfs_rq->throttled_clock_task = rq->clock_task;
 	cfs_rq->throttle_count++;
 
 	return 0;
@@ -2363,7 +2335,7 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 		rq->nr_running -= task_delta;
 
 	cfs_rq->throttled = 1;
-	cfs_rq->throttled_clock = rq_clock(rq);
+	cfs_rq->throttled_clock = rq->clock;
 	raw_spin_lock(&cfs_b->lock);
 	list_add_tail_rcu(&cfs_rq->throttled_list, &cfs_b->throttled_cfs_rq);
 	if (!cfs_b->timer_active)
@@ -2379,17 +2351,15 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 	int enqueue = 1;
 	long task_delta;
 
-	se = cfs_rq->tg->se[cpu_of(rq)];
+	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
 
 	cfs_rq->throttled = 0;
-
-	update_rq_clock(rq);
-
 	raw_spin_lock(&cfs_b->lock);
-	cfs_b->throttled_time += rq_clock(rq) - cfs_rq->throttled_clock;
+	cfs_b->throttled_time += rq->clock - cfs_rq->throttled_clock;
 	list_del_rcu(&cfs_rq->throttled_list);
 	raw_spin_unlock(&cfs_b->lock);
 
+	update_rq_clock(rq);
 	/* update hierarchical throttle state */
 	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
 
@@ -2697,6 +2667,10 @@ static void check_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	throttle_cfs_rq(cfs_rq);
 }
 
+static inline u64 default_cfs_period(void);
+static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun);
+static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b);
+
 static enum hrtimer_restart sched_cfs_slack_timer(struct hrtimer *timer)
 {
 	struct cfs_bandwidth *cfs_b =
@@ -2800,7 +2774,7 @@ static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
 #else /* CONFIG_CFS_BANDWIDTH */
 static inline u64 cfs_rq_clock_task(struct cfs_rq *cfs_rq)
 {
-	return rq_clock_task(rq_of(cfs_rq));
+	return rq_of(cfs_rq)->clock_task;
 }
 
 static void account_cfs_rq_runtime(struct cfs_rq *cfs_rq,
@@ -3011,7 +2985,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 /* Used instead of source_load when we know the type == 0 */
 static unsigned long weighted_cpuload(const int cpu)
 {
-	return cpu_rq(cpu)->cfs.runnable_load_avg;
+	return cpu_rq(cpu)->load.weight;
 }
 
 /*
@@ -3056,10 +3030,9 @@ static unsigned long cpu_avg_load_per_task(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long nr_running = ACCESS_ONCE(rq->nr_running);
-	unsigned long load_avg = rq->cfs.runnable_load_avg;
 
 	if (nr_running)
-		return load_avg / nr_running;
+		return rq->load.weight / nr_running;
 
 	return 0;
 }
@@ -3291,15 +3264,11 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p, int sync)
  */
 static struct sched_group *
 find_idlest_group(struct sched_domain *sd, struct task_struct *p,
-		  int this_cpu, int sd_flag)
+		  int this_cpu, int load_idx)
 {
 	struct sched_group *idlest = NULL, *group = sd->groups;
 	unsigned long min_load = ULONG_MAX, this_load = 0;
-	int load_idx = sd->forkexec_idx;
 	int imbalance = 100 + (sd->imbalance_pct-100)/2;
-
-	if (sd_flag & SD_BALANCE_WAKE)
-		load_idx = sd->wake_idx;
 
 	do {
 		unsigned long load, avg_load;
@@ -3474,6 +3443,7 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 	}
 
 	while (sd) {
+		int load_idx = sd->forkexec_idx;
 		struct sched_group *group;
 		int weight;
 
@@ -3482,7 +3452,10 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 			continue;
 		}
 
-		group = find_idlest_group(sd, p, cpu, sd_flag);
+		if (sd_flag & SD_BALANCE_WAKE)
+			load_idx = sd->wake_idx;
+
+		group = find_idlest_group(sd, p, cpu, load_idx);
 		if (!group) {
 			sd = sd->child;
 			continue;
@@ -3514,6 +3487,12 @@ unlock:
 }
 
 /*
+ * Load-tracking only depends on SMP, FAIR_GROUP_SCHED dependency below may be
+ * removed when useful for applications beyond shares distribution (e.g.
+ * load-balance).
+ */
+#ifdef CONFIG_FAIR_GROUP_SCHED
+/*
  * Called immediately before a task is migrated to a new cpu; task_cpu(p) and
  * cfs_rq_of(p) references at time of call are still valid and identify the
  * previous cpu.  However, the caller only guarantees p->pi_lock is held; no
@@ -3536,6 +3515,7 @@ migrate_task_rq_fair(struct task_struct *p, int next_cpu)
 		atomic64_add(se->avg.load_avg_contrib, &cfs_rq->removed_load);
 	}
 }
+#endif
 #endif /* CONFIG_SMP */
 
 static unsigned long
@@ -4042,7 +4022,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	 * 2) too many balance attempts have failed.
 	 */
 
-	tsk_cache_hot = task_hot(p, rq_clock_task(env->src_rq), env->sd);
+	tsk_cache_hot = task_hot(p, env->src_rq->clock_task, env->sd);
 	if (!tsk_cache_hot ||
 		env->sd->nr_balance_failed > env->sd->cache_nice_tries) {
 
@@ -4240,14 +4220,11 @@ static int tg_load_down(struct task_group *tg, void *data)
 	long cpu = (long)data;
 
 	if (!tg->parent) {
-		load = cpu_rq(cpu)->avg.load_avg_contrib;
+		load = cpu_rq(cpu)->load.weight;
 	} else {
-		unsigned long tmp_rla;
-		tmp_rla = tg->parent->cfs_rq[cpu]->runnable_load_avg + 1;
-
 		load = tg->parent->cfs_rq[cpu]->h_load;
-		load *= tg->se[cpu]->avg.load_avg_contrib;
-		load /= tmp_rla;
+		load *= tg->se[cpu]->load.weight;
+		load /= tg->parent->cfs_rq[cpu]->load.weight + 1;
 	}
 
 	tg->cfs_rq[cpu]->h_load = load;
@@ -4273,9 +4250,12 @@ static void update_h_load(long cpu)
 static unsigned long task_h_load(struct task_struct *p)
 {
 	struct cfs_rq *cfs_rq = task_cfs_rq(p);
+	unsigned long load;
 
-	return div64_ul(p->se.avg.load_avg_contrib * cfs_rq->h_load,
-			cfs_rq->runnable_load_avg + 1);
+	load = p->se.load.weight;
+	load = div_u64(load * cfs_rq->h_load, cfs_rq->load.weight + 1);
+
+	return load;
 }
 #else
 static inline void update_blocked_averages(int cpu)
@@ -4288,68 +4268,60 @@ static inline void update_h_load(long cpu)
 
 static unsigned long task_h_load(struct task_struct *p)
 {
-	return p->se.avg.load_avg_contrib;
+	return p->se.load.weight;
 }
 #endif
 
 /********** Helpers for find_busiest_group ************************/
+/*
+ * sd_lb_stats - Structure to store the statistics of a sched_domain
+ * 		during load balancing.
+ */
+struct sd_lb_stats {
+	struct sched_group *busiest; /* Busiest group in this sd */
+	struct sched_group *this;  /* Local group in this sd */
+	unsigned long total_load;  /* Total load of all groups in sd */
+	unsigned long total_pwr;   /*	Total power of all groups in sd */
+	unsigned long avg_load;	   /* Average load across all groups in sd */
+
+	/** Statistics of this group */
+	unsigned long this_load;
+	unsigned long this_load_per_task;
+	unsigned long this_nr_running;
+	unsigned long this_has_capacity;
+	unsigned int  this_idle_cpus;
+
+	/* Statistics of the busiest group */
+	unsigned int  busiest_idle_cpus;
+	unsigned long max_load;
+	unsigned long busiest_load_per_task;
+	unsigned long busiest_nr_running;
+	unsigned long busiest_group_capacity;
+	unsigned long busiest_has_capacity;
+	unsigned int  busiest_group_weight;
+
+	int group_imb; /* Is there imbalance in this sd */
+};
+
 /*
  * sg_lb_stats - stats of a sched_group required for load_balancing
  */
 struct sg_lb_stats {
 	unsigned long avg_load; /*Avg load across the CPUs of the group */
 	unsigned long group_load; /* Total load over the CPUs of the group */
+	unsigned long sum_nr_running; /* Nr tasks running in the group */
 	unsigned long sum_weighted_load; /* Weighted load of group's tasks */
-	unsigned long load_per_task;
-	unsigned long group_power;
-	unsigned int sum_nr_running; /* Nr tasks running in the group */
-	unsigned int group_capacity;
-	unsigned int idle_cpus;
-	unsigned int group_weight;
+	unsigned long group_capacity;
+	unsigned long idle_cpus;
+	unsigned long group_weight;
 	int group_imb; /* Is there an imbalance in the group ? */
 	int group_has_capacity; /* Is there extra capacity in the group? */
 };
-
-/*
- * sd_lb_stats - Structure to store the statistics of a sched_domain
- *		 during load balancing.
- */
-struct sd_lb_stats {
-	struct sched_group *busiest;	/* Busiest group in this sd */
-	struct sched_group *local;	/* Local group in this sd */
-	unsigned long total_load;	/* Total load of all groups in sd */
-	unsigned long total_pwr;	/* Total power of all groups in sd */
-	unsigned long avg_load;	/* Average load across all groups in sd */
-
-	struct sg_lb_stats busiest_stat;/* Statistics of the busiest group */
-	struct sg_lb_stats local_stat;	/* Statistics of the local group */
-};
-
-static inline void init_sd_lb_stats(struct sd_lb_stats *sds)
-{
-	/*
-	 * Skimp on the clearing to avoid duplicate work. We can avoid clearing
-	 * local_stat because update_sg_lb_stats() does a full clear/assignment.
-	 * We must however clear busiest_stat::avg_load because
-	 * update_sd_pick_busiest() reads this before assignment.
-	 */
-	*sds = (struct sd_lb_stats){
-		.busiest = NULL,
-		.local = NULL,
-		.total_load = 0UL,
-		.total_pwr = 0UL,
-		.busiest_stat = {
-			.avg_load = 0UL,
-		},
-	};
-}
 
 /**
  * get_sd_load_idx - Obtain the load index for a given sched domain.
  * @sd: The sched_domain whose load_idx is to be obtained.
  * @idle: The Idle status of the CPU for whose sd load_icx is obtained.
- *
- * Return: The load index.
  */
 static inline int get_sd_load_idx(struct sched_domain *sd,
 					enum cpu_idle_type idle)
@@ -4409,7 +4381,7 @@ static unsigned long scale_rt_power(int cpu)
 	age_stamp = ACCESS_ONCE(rq->age_stamp);
 	avg = ACCESS_ONCE(rq->rt_avg);
 
-	total = sched_avg_period() + (rq_clock(rq) - age_stamp);
+	total = sched_avg_period() + (rq->clock - age_stamp);
 
 	if (unlikely(total < avg)) {
 		/* Ensures that power won't end up being negative */
@@ -4464,7 +4436,7 @@ void update_group_power(struct sched_domain *sd, int cpu)
 {
 	struct sched_domain *child = sd->child;
 	struct sched_group *group, *sdg = sd->groups;
-	unsigned long power, power_orig;
+	unsigned long power;
 	unsigned long interval;
 
 	interval = msecs_to_jiffies(sd->balance_interval);
@@ -4476,7 +4448,7 @@ void update_group_power(struct sched_domain *sd, int cpu)
 		return;
 	}
 
-	power_orig = power = 0;
+	power = 0;
 
 	if (child->flags & SD_OVERLAP) {
 		/*
@@ -4484,33 +4456,8 @@ void update_group_power(struct sched_domain *sd, int cpu)
 		 * span the current group.
 		 */
 
-		for_each_cpu(cpu, sched_group_cpus(sdg)) {
-			struct sched_group_power *sgp;
-			struct rq *rq = cpu_rq(cpu);
-
-			/*
-			 * build_sched_domains() -> init_sched_groups_power()
-			 * gets here before we've attached the domains to the
-			 * runqueues.
-			 *
-			 * Use power_of(), which is set irrespective of domains
-			 * in update_cpu_power().
-			 *
-			 * This avoids power/power_orig from being 0 and
-			 * causing divide-by-zero issues on boot.
-			 *
-			 * Runtime updates will correct power_orig.
-			 */
-			if (unlikely(!rq->sd)) {
-				power_orig += power_of(cpu);
-				power += power_of(cpu);
-				continue;
-			}
-
-			sgp = rq->sd->groups->sgp;
-			power_orig += sgp->power_orig;
-			power += sgp->power;
-		}
+		for_each_cpu(cpu, sched_group_cpus(sdg))
+			power += power_of(cpu);
 	} else  {
 		/*
 		 * !SD_OVERLAP domains can assume that child groups
@@ -4519,14 +4466,12 @@ void update_group_power(struct sched_domain *sd, int cpu)
 
 		group = child->groups;
 		do {
-			power_orig += group->sgp->power_orig;
 			power += group->sgp->power;
 			group = group->next;
 		} while (group != child->groups);
 	}
 
-	sdg->sgp->power_orig = power_orig;
-	sdg->sgp->power = power;
+	sdg->sgp->power_orig = sdg->sgp->power = power;
 }
 
 /*
@@ -4554,99 +4499,33 @@ fix_small_capacity(struct sched_domain *sd, struct sched_group *group)
 	return 0;
 }
 
-/*
- * Group imbalance indicates (and tries to solve) the problem where balancing
- * groups is inadequate due to tsk_cpus_allowed() constraints.
- *
- * Imagine a situation of two groups of 4 cpus each and 4 tasks each with a
- * cpumask covering 1 cpu of the first group and 3 cpus of the second group.
- * Something like:
- *
- * 	{ 0 1 2 3 } { 4 5 6 7 }
- * 	        *     * * *
- *
- * If we were to balance group-wise we'd place two tasks in the first group and
- * two tasks in the second group. Clearly this is undesired as it will overload
- * cpu 3 and leave one of the cpus in the second group unused.
- *
- * The current solution to this issue is detecting the skew in the first group
- * by noticing it has a cpu that is overloaded while the remaining cpus are
- * idle -- or rather, there's a distinct imbalance in the cpus; see
- * sg_imbalanced().
- *
- * When this is so detected; this group becomes a candidate for busiest; see
- * update_sd_pick_busiest(). And calculcate_imbalance() and
- * find_busiest_group() avoid some of the usual balance conditional to allow it
- * to create an effective group imbalance.
- *
- * This is a somewhat tricky proposition since the next run might not find the
- * group imbalance and decide the groups need to be balanced again. A most
- * subtle and fragile situation.
- */
-
-struct sg_imb_stats {
-	unsigned long max_nr_running, min_nr_running;
-	unsigned long max_cpu_load, min_cpu_load;
-};
-
-static inline void init_sg_imb_stats(struct sg_imb_stats *sgi)
-{
-	sgi->max_cpu_load = sgi->max_nr_running = 0UL;
-	sgi->min_cpu_load = sgi->min_nr_running = ~0UL;
-}
-
-static inline void
-update_sg_imb_stats(struct sg_imb_stats *sgi,
-		    unsigned long load, unsigned long nr_running)
-{
-	if (load > sgi->max_cpu_load)
-		sgi->max_cpu_load = load;
-	if (sgi->min_cpu_load > load)
-		sgi->min_cpu_load = load;
-
-	if (nr_running > sgi->max_nr_running)
-		sgi->max_nr_running = nr_running;
-	if (sgi->min_nr_running > nr_running)
-		sgi->min_nr_running = nr_running;
-}
-
-static inline int
-sg_imbalanced(struct sg_lb_stats *sgs, struct sg_imb_stats *sgi)
-{
-	/*
-	 * Consider the group unbalanced when the imbalance is larger
-	 * than the average weight of a task.
-	 *
-	 * APZ: with cgroup the avg task weight can vary wildly and
-	 *      might not be a suitable number - should we keep a
-	 *      normalized nr_running number somewhere that negates
-	 *      the hierarchy?
-	 */
-	if ((sgi->max_cpu_load - sgi->min_cpu_load) >= sgs->load_per_task &&
-	    (sgi->max_nr_running - sgi->min_nr_running) > 1)
-		return 1;
-
-	return 0;
-}
-
 /**
  * update_sg_lb_stats - Update sched_group's statistics for load balancing.
  * @env: The load balancing environment.
  * @group: sched_group whose statistics are to be updated.
  * @load_idx: Load index of sched_domain of this_cpu for load calc.
  * @local_group: Does group contain this_cpu.
+ * @balance: Should we balance.
  * @sgs: variable to hold the statistics for this group.
  */
 static inline void update_sg_lb_stats(struct lb_env *env,
 			struct sched_group *group, int load_idx,
-			int local_group, struct sg_lb_stats *sgs)
+			int local_group, int *balance, struct sg_lb_stats *sgs)
 {
-	struct sg_imb_stats sgi;
-	unsigned long nr_running;
-	unsigned long load;
+	unsigned long nr_running, max_nr_running, min_nr_running;
+	unsigned long load, max_cpu_load, min_cpu_load;
+	unsigned int balance_cpu = -1, first_idle_cpu = 0;
+	unsigned long avg_load_per_task = 0;
 	int i;
 
-	init_sg_imb_stats(&sgi);
+	if (local_group)
+		balance_cpu = group_balance_cpu(group);
+
+	/* Tally up the load of all CPUs in the group */
+	max_cpu_load = 0;
+	min_cpu_load = ~0UL;
+	max_nr_running = 0;
+	min_nr_running = ~0UL;
 
 	for_each_cpu_and(i, sched_group_cpus(group), env->cpus) {
 		struct rq *rq = cpu_rq(i);
@@ -4655,10 +4534,24 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 
 		/* Bias balancing toward cpus of our domain */
 		if (local_group) {
+			if (idle_cpu(i) && !first_idle_cpu &&
+					cpumask_test_cpu(i, sched_group_mask(group))) {
+				first_idle_cpu = 1;
+				balance_cpu = i;
+			}
+
 			load = target_load(i, load_idx);
 		} else {
 			load = source_load(i, load_idx);
-			update_sg_imb_stats(&sgi, load, nr_running);
+			if (load > max_cpu_load)
+				max_cpu_load = load;
+			if (min_cpu_load > load)
+				min_cpu_load = load;
+
+			if (nr_running > max_nr_running)
+				max_nr_running = nr_running;
+			if (min_nr_running > nr_running)
+				min_nr_running = nr_running;
 		}
 
 		sgs->group_load += load;
@@ -4668,25 +4561,46 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 			sgs->idle_cpus++;
 	}
 
-	if (local_group && (env->idle != CPU_NEWLY_IDLE ||
-			time_after_eq(jiffies, group->sgp->next_update)))
-		update_group_power(env->sd, env->dst_cpu);
+	/*
+	 * First idle cpu or the first cpu(busiest) in this sched group
+	 * is eligible for doing load balancing at this and above
+	 * domains. In the newly idle case, we will allow all the cpu's
+	 * to do the newly idle load balance.
+	 */
+	if (local_group) {
+		if (env->idle != CPU_NEWLY_IDLE) {
+			if (balance_cpu != env->dst_cpu) {
+				*balance = 0;
+				return;
+			}
+			update_group_power(env->sd, env->dst_cpu);
+		} else if (time_after_eq(jiffies, group->sgp->next_update))
+			update_group_power(env->sd, env->dst_cpu);
+	}
 
 	/* Adjust by relative CPU power of the group */
-	sgs->group_power = group->sgp->power;
-	sgs->avg_load = (sgs->group_load*SCHED_POWER_SCALE) / sgs->group_power;
+	sgs->avg_load = (sgs->group_load*SCHED_POWER_SCALE) / group->sgp->power;
 
+	/*
+	 * Consider the group unbalanced when the imbalance is larger
+	 * than the average weight of a task.
+	 *
+	 * APZ: with cgroup the avg task weight can vary wildly and
+	 *      might not be a suitable number - should we keep a
+	 *      normalized nr_running number somewhere that negates
+	 *      the hierarchy?
+	 */
 	if (sgs->sum_nr_running)
-		sgs->load_per_task = sgs->sum_weighted_load / sgs->sum_nr_running;
+		avg_load_per_task = sgs->sum_weighted_load / sgs->sum_nr_running;
 
-	sgs->group_imb = sg_imbalanced(sgs, &sgi);
+	if ((max_cpu_load - min_cpu_load) >= avg_load_per_task &&
+	    (max_nr_running - min_nr_running) > 1)
+		sgs->group_imb = 1;
 
-	sgs->group_capacity =
-		DIV_ROUND_CLOSEST(sgs->group_power, SCHED_POWER_SCALE);
-
+	sgs->group_capacity = DIV_ROUND_CLOSEST(group->sgp->power,
+						SCHED_POWER_SCALE);
 	if (!sgs->group_capacity)
 		sgs->group_capacity = fix_small_capacity(env->sd, group);
-
 	sgs->group_weight = group->group_weight;
 
 	if (sgs->group_capacity > sgs->sum_nr_running)
@@ -4702,16 +4616,13 @@ static inline void update_sg_lb_stats(struct lb_env *env,
  *
  * Determine if @sg is a busier group than the previously selected
  * busiest group.
- *
- * Return: %true if @sg is a busier group than the previously selected
- * busiest group. %false otherwise.
  */
 static bool update_sd_pick_busiest(struct lb_env *env,
 				   struct sd_lb_stats *sds,
 				   struct sched_group *sg,
 				   struct sg_lb_stats *sgs)
 {
-	if (sgs->avg_load <= sds->busiest_stat.avg_load)
+	if (sgs->avg_load <= sds->max_load)
 		return false;
 
 	if (sgs->sum_nr_running > sgs->group_capacity)
@@ -4740,14 +4651,15 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 /**
  * update_sd_lb_stats - Update sched_domain's statistics for load balancing.
  * @env: The load balancing environment.
+ * @balance: Should we balance.
  * @sds: variable to hold the statistics for this sched_domain.
  */
 static inline void update_sd_lb_stats(struct lb_env *env,
-					struct sd_lb_stats *sds)
+					int *balance, struct sd_lb_stats *sds)
 {
 	struct sched_domain *child = env->sd->child;
 	struct sched_group *sg = env->sd->groups;
-	struct sg_lb_stats tmp_sgs;
+	struct sg_lb_stats sgs;
 	int load_idx, prefer_sibling = 0;
 
 	if (child && child->flags & SD_PREFER_SIBLING)
@@ -4756,17 +4668,17 @@ static inline void update_sd_lb_stats(struct lb_env *env,
 	load_idx = get_sd_load_idx(env->sd, env->idle);
 
 	do {
-		struct sg_lb_stats *sgs = &tmp_sgs;
 		int local_group;
 
 		local_group = cpumask_test_cpu(env->dst_cpu, sched_group_cpus(sg));
-		if (local_group) {
-			sds->local = sg;
-			sgs = &sds->local_stat;
-		}
+		memset(&sgs, 0, sizeof(sgs));
+		update_sg_lb_stats(env, sg, load_idx, local_group, balance, &sgs);
 
-		memset(sgs, 0, sizeof(*sgs));
-		update_sg_lb_stats(env, sg, load_idx, local_group, sgs);
+		if (local_group && !(*balance))
+			return;
+
+		sds->total_load += sgs.group_load;
+		sds->total_pwr += sg->sgp->power;
 
 		/*
 		 * In case the child domain prefers tasks go to siblings
@@ -4778,17 +4690,26 @@ static inline void update_sd_lb_stats(struct lb_env *env,
 		 * heaviest group when it is already under-utilized (possible
 		 * with a large weight task outweighs the tasks on the system).
 		 */
-		if (prefer_sibling && !local_group &&
-				sds->local && sds->local_stat.group_has_capacity)
-			sgs->group_capacity = min(sgs->group_capacity, 1U);
+		if (prefer_sibling && !local_group && sds->this_has_capacity)
+			sgs.group_capacity = min(sgs.group_capacity, 1UL);
 
-		/* Now, start updating sd_lb_stats */
-		sds->total_load += sgs->group_load;
-		sds->total_pwr += sgs->group_power;
-
-		if (!local_group && update_sd_pick_busiest(env, sds, sg, sgs)) {
+		if (local_group) {
+			sds->this_load = sgs.avg_load;
+			sds->this = sg;
+			sds->this_nr_running = sgs.sum_nr_running;
+			sds->this_load_per_task = sgs.sum_weighted_load;
+			sds->this_has_capacity = sgs.group_has_capacity;
+			sds->this_idle_cpus = sgs.idle_cpus;
+		} else if (update_sd_pick_busiest(env, sds, sg, &sgs)) {
+			sds->max_load = sgs.avg_load;
 			sds->busiest = sg;
-			sds->busiest_stat = *sgs;
+			sds->busiest_nr_running = sgs.sum_nr_running;
+			sds->busiest_idle_cpus = sgs.idle_cpus;
+			sds->busiest_group_capacity = sgs.group_capacity;
+			sds->busiest_load_per_task = sgs.sum_weighted_load;
+			sds->busiest_has_capacity = sgs.group_has_capacity;
+			sds->busiest_group_weight = sgs.group_weight;
+			sds->group_imb = sgs.group_imb;
 		}
 
 		sg = sg->next;
@@ -4812,7 +4733,7 @@ static inline void update_sd_lb_stats(struct lb_env *env,
  * assuming lower CPU number will be equivalent to lower a SMT thread
  * number.
  *
- * Return: 1 when packing is required and a task should be moved to
+ * Returns 1 when packing is required and a task should be moved to
  * this CPU.  The amount of the imbalance is returned in *imbalance.
  *
  * @env: The load balancing environment.
@@ -4833,8 +4754,7 @@ static int check_asym_packing(struct lb_env *env, struct sd_lb_stats *sds)
 		return 0;
 
 	env->imbalance = DIV_ROUND_CLOSEST(
-		sds->busiest_stat.avg_load * sds->busiest_stat.group_power,
-		SCHED_POWER_SCALE);
+		sds->max_load * sds->busiest->sgp->power, SCHED_POWER_SCALE);
 
 	return 1;
 }
@@ -4852,23 +4772,24 @@ void fix_small_imbalance(struct lb_env *env, struct sd_lb_stats *sds)
 	unsigned long tmp, pwr_now = 0, pwr_move = 0;
 	unsigned int imbn = 2;
 	unsigned long scaled_busy_load_per_task;
-	struct sg_lb_stats *local, *busiest;
 
-	local = &sds->local_stat;
-	busiest = &sds->busiest_stat;
+	if (sds->this_nr_running) {
+		sds->this_load_per_task /= sds->this_nr_running;
+		if (sds->busiest_load_per_task >
+				sds->this_load_per_task)
+			imbn = 1;
+	} else {
+		sds->this_load_per_task =
+			cpu_avg_load_per_task(env->dst_cpu);
+	}
 
-	if (!local->sum_nr_running)
-		local->load_per_task = cpu_avg_load_per_task(env->dst_cpu);
-	else if (busiest->load_per_task > local->load_per_task)
-		imbn = 1;
+	scaled_busy_load_per_task = sds->busiest_load_per_task
+					 * SCHED_POWER_SCALE;
+	scaled_busy_load_per_task /= sds->busiest->sgp->power;
 
-	scaled_busy_load_per_task =
-		(busiest->load_per_task * SCHED_POWER_SCALE) /
-		busiest->group_power;
-
-	if (busiest->avg_load + scaled_busy_load_per_task >=
-	    local->avg_load + (scaled_busy_load_per_task * imbn)) {
-		env->imbalance = busiest->load_per_task;
+	if (sds->max_load - sds->this_load + scaled_busy_load_per_task >=
+			(scaled_busy_load_per_task * imbn)) {
+		env->imbalance = sds->busiest_load_per_task;
 		return;
 	}
 
@@ -4878,37 +4799,34 @@ void fix_small_imbalance(struct lb_env *env, struct sd_lb_stats *sds)
 	 * moving them.
 	 */
 
-	pwr_now += busiest->group_power *
-			min(busiest->load_per_task, busiest->avg_load);
-	pwr_now += local->group_power *
-			min(local->load_per_task, local->avg_load);
+	pwr_now += sds->busiest->sgp->power *
+			min(sds->busiest_load_per_task, sds->max_load);
+	pwr_now += sds->this->sgp->power *
+			min(sds->this_load_per_task, sds->this_load);
 	pwr_now /= SCHED_POWER_SCALE;
 
 	/* Amount of load we'd subtract */
-	tmp = (busiest->load_per_task * SCHED_POWER_SCALE) /
-		busiest->group_power;
-	if (busiest->avg_load > tmp) {
-		pwr_move += busiest->group_power *
-			    min(busiest->load_per_task,
-				busiest->avg_load - tmp);
-	}
+	tmp = (sds->busiest_load_per_task * SCHED_POWER_SCALE) /
+		sds->busiest->sgp->power;
+	if (sds->max_load > tmp)
+		pwr_move += sds->busiest->sgp->power *
+			min(sds->busiest_load_per_task, sds->max_load - tmp);
 
 	/* Amount of load we'd add */
-	if (busiest->avg_load * busiest->group_power <
-	    busiest->load_per_task * SCHED_POWER_SCALE) {
-		tmp = (busiest->avg_load * busiest->group_power) /
-		      local->group_power;
-	} else {
-		tmp = (busiest->load_per_task * SCHED_POWER_SCALE) /
-		      local->group_power;
-	}
-	pwr_move += local->group_power *
-		    min(local->load_per_task, local->avg_load + tmp);
+	if (sds->max_load * sds->busiest->sgp->power <
+		sds->busiest_load_per_task * SCHED_POWER_SCALE)
+		tmp = (sds->max_load * sds->busiest->sgp->power) /
+			sds->this->sgp->power;
+	else
+		tmp = (sds->busiest_load_per_task * SCHED_POWER_SCALE) /
+			sds->this->sgp->power;
+	pwr_move += sds->this->sgp->power *
+			min(sds->this_load_per_task, sds->this_load + tmp);
 	pwr_move /= SCHED_POWER_SCALE;
 
 	/* Move if we gain throughput */
 	if (pwr_move > pwr_now)
-		env->imbalance = busiest->load_per_task;
+		env->imbalance = sds->busiest_load_per_task;
 }
 
 /**
@@ -4920,18 +4838,11 @@ void fix_small_imbalance(struct lb_env *env, struct sd_lb_stats *sds)
 static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *sds)
 {
 	unsigned long max_pull, load_above_capacity = ~0UL;
-	struct sg_lb_stats *local, *busiest;
 
-	local = &sds->local_stat;
-	busiest = &sds->busiest_stat;
-
-	if (busiest->group_imb) {
-		/*
-		 * In the group_imb case we cannot rely on group-wide averages
-		 * to ensure cpu-load equilibrium, look at wider averages. XXX
-		 */
-		busiest->load_per_task =
-			min(busiest->load_per_task, sds->avg_load);
+	sds->busiest_load_per_task /= sds->busiest_nr_running;
+	if (sds->group_imb) {
+		sds->busiest_load_per_task =
+			min(sds->busiest_load_per_task, sds->avg_load);
 	}
 
 	/*
@@ -4939,23 +4850,21 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 	 * max load less than avg load(as we skip the groups at or below
 	 * its cpu_power, while calculating max_load..)
 	 */
-	if (busiest->avg_load <= sds->avg_load ||
-	    local->avg_load >= sds->avg_load) {
+	if (sds->max_load < sds->avg_load) {
 		env->imbalance = 0;
 		return fix_small_imbalance(env, sds);
 	}
 
-	if (!busiest->group_imb) {
+	if (!sds->group_imb) {
 		/*
 		 * Don't want to pull so many tasks that a group would go idle.
-		 * Except of course for the group_imb case, since then we might
-		 * have to drop below capacity to reach cpu-load equilibrium.
 		 */
-		load_above_capacity =
-			(busiest->sum_nr_running - busiest->group_capacity);
+		load_above_capacity = (sds->busiest_nr_running -
+						sds->busiest_group_capacity);
 
 		load_above_capacity *= (SCHED_LOAD_SCALE * SCHED_POWER_SCALE);
-		load_above_capacity /= busiest->group_power;
+
+		load_above_capacity /= sds->busiest->sgp->power;
 	}
 
 	/*
@@ -4965,14 +4874,15 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 	 * we also don't want to reduce the group load below the group capacity
 	 * (so that we can implement power-savings policies etc). Thus we look
 	 * for the minimum possible imbalance.
+	 * Be careful of negative numbers as they'll appear as very large values
+	 * with unsigned longs.
 	 */
-	max_pull = min(busiest->avg_load - sds->avg_load, load_above_capacity);
+	max_pull = min(sds->max_load - sds->avg_load, load_above_capacity);
 
 	/* How much load to actually move to equalise the imbalance */
-	env->imbalance = min(
-		max_pull * busiest->group_power,
-		(sds->avg_load - local->avg_load) * local->group_power
-	) / SCHED_POWER_SCALE;
+	env->imbalance = min(max_pull * sds->busiest->sgp->power,
+		(sds->avg_load - sds->this_load) * sds->this->sgp->power)
+			/ SCHED_POWER_SCALE;
 
 	/*
 	 * if *imbalance is less than the average load per runnable task
@@ -4980,8 +4890,9 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 	 * a think about bumping its value to force at least one task to be
 	 * moved
 	 */
-	if (env->imbalance < busiest->load_per_task)
+	if (env->imbalance < sds->busiest_load_per_task)
 		return fix_small_imbalance(env, sds);
+
 }
 
 /******* find_busiest_group() helpers end here *********************/
@@ -4997,62 +4908,69 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
  * to restore balance.
  *
  * @env: The load balancing environment.
+ * @balance: Pointer to a variable indicating if this_cpu
+ *	is the appropriate cpu to perform load balancing at this_level.
  *
- * Return:	- The busiest group if imbalance exists.
+ * Returns:	- the busiest group if imbalance exists.
  *		- If no imbalance and user has opted for power-savings balance,
  *		   return the least loaded group whose CPUs can be
  *		   put to idle by rebalancing its tasks onto our group.
  */
-static struct sched_group *find_busiest_group(struct lb_env *env)
+static struct sched_group *
+find_busiest_group(struct lb_env *env, int *balance)
 {
-	struct sg_lb_stats *local, *busiest;
 	struct sd_lb_stats sds;
 
-	init_sd_lb_stats(&sds);
+	memset(&sds, 0, sizeof(sds));
 
 	/*
 	 * Compute the various statistics relavent for load balancing at
 	 * this level.
 	 */
-	update_sd_lb_stats(env, &sds);
-	local = &sds.local_stat;
-	busiest = &sds.busiest_stat;
+	update_sd_lb_stats(env, balance, &sds);
+
+	/*
+	 * this_cpu is not the appropriate cpu to perform load balancing at
+	 * this level.
+	 */
+	if (!(*balance))
+		goto ret;
 
 	if ((env->idle == CPU_IDLE || env->idle == CPU_NEWLY_IDLE) &&
 	    check_asym_packing(env, &sds))
 		return sds.busiest;
 
 	/* There is no busy sibling group to pull tasks from */
-	if (!sds.busiest || busiest->sum_nr_running == 0)
+	if (!sds.busiest || sds.busiest_nr_running == 0)
 		goto out_balanced;
 
 	sds.avg_load = (SCHED_POWER_SCALE * sds.total_load) / sds.total_pwr;
 
 	/*
 	 * If the busiest group is imbalanced the below checks don't
-	 * work because they assume all things are equal, which typically
+	 * work because they assumes all things are equal, which typically
 	 * isn't true due to cpus_allowed constraints and the like.
 	 */
-	if (busiest->group_imb)
+	if (sds.group_imb)
 		goto force_balance;
 
 	/* SD_BALANCE_NEWIDLE trumps SMP nice when underutilized */
-	if (env->idle == CPU_NEWLY_IDLE && local->group_has_capacity &&
-	    !busiest->group_has_capacity)
+	if (env->idle == CPU_NEWLY_IDLE && sds.this_has_capacity &&
+			!sds.busiest_has_capacity)
 		goto force_balance;
 
 	/*
 	 * If the local group is more busy than the selected busiest group
 	 * don't try and pull any tasks.
 	 */
-	if (local->avg_load >= busiest->avg_load)
+	if (sds.this_load >= sds.max_load)
 		goto out_balanced;
 
 	/*
 	 * Don't pull any tasks if this group is already above the domain
 	 * average load.
 	 */
-	if (local->avg_load >= sds.avg_load)
+	if (sds.this_load >= sds.avg_load)
 		goto out_balanced;
 
 	if (env->idle == CPU_IDLE) {
@@ -5062,16 +4980,15 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 		 * there is no imbalance between this and busiest group
 		 * wrt to idle cpu's, it is balanced.
 		 */
-		if ((local->idle_cpus < busiest->idle_cpus) &&
-		    busiest->sum_nr_running <= busiest->group_weight)
+		if ((sds.this_idle_cpus <= sds.busiest_idle_cpus + 1) &&
+		    sds.busiest_nr_running <= sds.busiest_group_weight)
 			goto out_balanced;
 	} else {
 		/*
 		 * In the CPU_NEWLY_IDLE, CPU_NOT_IDLE cases, use
 		 * imbalance_pct to be conservative.
 		 */
-		if (100 * busiest->avg_load <=
-				env->sd->imbalance_pct * local->avg_load)
+		if (100 * sds.max_load <= env->sd->imbalance_pct * sds.this_load)
 			goto out_balanced;
 	}
 
@@ -5081,6 +4998,7 @@ force_balance:
 	return sds.busiest;
 
 out_balanced:
+ret:
 	env->imbalance = 0;
 	return NULL;
 }
@@ -5095,7 +5013,7 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 	unsigned long max_load = 0;
 	int i;
 
-	for_each_cpu_and(i, sched_group_cpus(group), env->cpus) {
+	for_each_cpu(i, sched_group_cpus(group)) {
 		unsigned long power = power_of(i);
 		unsigned long capacity = DIV_ROUND_CLOSEST(power,
 							   SCHED_POWER_SCALE);
@@ -5103,6 +5021,9 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 
 		if (!capacity)
 			capacity = fix_small_capacity(env->sd, group);
+
+		if (!cpumask_test_cpu(i, env->cpus))
+			continue;
 
 		rq = cpu_rq(i);
 		wl = weighted_cpuload(i);
@@ -5160,51 +5081,17 @@ static int need_active_balance(struct lb_env *env)
 
 static int active_load_balance_cpu_stop(void *data);
 
-static int should_we_balance(struct lb_env *env)
-{
-	struct sched_group *sg = env->sd->groups;
-	struct cpumask *sg_cpus, *sg_mask;
-	int cpu, balance_cpu = -1;
-
-	/*
-	 * In the newly idle case, we will allow all the cpu's
-	 * to do the newly idle load balance.
-	 */
-	if (env->idle == CPU_NEWLY_IDLE)
-		return 1;
-
-	sg_cpus = sched_group_cpus(sg);
-	sg_mask = sched_group_mask(sg);
-	/* Try to find first idle cpu */
-	for_each_cpu_and(cpu, sg_cpus, env->cpus) {
-		if (!cpumask_test_cpu(cpu, sg_mask) || !idle_cpu(cpu))
-			continue;
-
-		balance_cpu = cpu;
-		break;
-	}
-
-	if (balance_cpu == -1)
-		balance_cpu = group_balance_cpu(sg);
-
-	/*
-	 * First idle cpu or the first cpu(busiest) in this sched group
-	 * is eligible for doing load balancing at this and above domains.
-	 */
-	return balance_cpu == env->dst_cpu;
-}
-
 /*
  * Check this_cpu to ensure it is balanced within domain. Attempt to move
  * tasks if there is an imbalance.
  */
 static int load_balance(int this_cpu, struct rq *this_rq,
 			struct sched_domain *sd, enum cpu_idle_type idle,
-			int *continue_balancing)
+			int *balance)
 {
 	int ld_moved, cur_ld_moved, active_balance = 0;
 	struct sched_group *group;
-	struct rq *busiest;
+	struct rq *busiest = NULL;
 	unsigned long flags;
 	struct cpumask *cpus = __get_cpu_var(load_balance_mask);
 
@@ -5231,12 +5118,11 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 	schedstat_inc(sd, lb_count[idle]);
 
 redo:
-	if (!should_we_balance(&env)) {
-		*continue_balancing = 0;
-		goto out_balanced;
-	}
+	group = find_busiest_group(&env, balance);
 
-	group = find_busiest_group(&env);
+	if (*balance == 0)
+		goto out_balanced;
+
 	if (!group) {
 		schedstat_inc(sd, lb_nobusyg[idle]);
 		goto out_balanced;
@@ -5311,14 +5197,14 @@ more_balance:
 		 */
 		if ((env.flags & LBF_SOME_PINNED) && env.imbalance > 0) {
 
-			/* Prevent to re-select dst_cpu via env's cpus */
-			cpumask_clear_cpu(env.dst_cpu, env.cpus);
-
 			env.dst_rq	 = cpu_rq(env.new_dst_cpu);
 			env.dst_cpu	 = env.new_dst_cpu;
 			env.flags	&= ~LBF_SOME_PINNED;
 			env.loop	 = 0;
 			env.loop_break	 = sched_nr_migrate_break;
+
+			/* Prevent to re-select dst_cpu via env's cpus */
+			cpumask_clear_cpu(env.dst_cpu, env.cpus);
 
 			/*
 			 * Go back to "more_balance" rather than "redo" since we
@@ -5436,6 +5322,11 @@ out_one_pinned:
 
 	ld_moved = 0;
 out:
+	trace_sched_load_balance(this_cpu, idle, *balance,
+				 group ? group->cpumask[0] : 0,
+				 busiest ? busiest->nr_running : 0,
+				 env.imbalance, env.flags, ld_moved,
+				 sd->balance_interval);
 	return ld_moved;
 }
 
@@ -5449,7 +5340,7 @@ void idle_balance(int this_cpu, struct rq *this_rq)
 	int pulled_task = 0;
 	unsigned long next_balance = jiffies + HZ;
 
-	this_rq->idle_stamp = rq_clock(this_rq);
+	this_rq->idle_stamp = this_rq->clock;
 
 	if (this_rq->avg_idle < sysctl_sched_migration_cost)
 		return;
@@ -5463,7 +5354,7 @@ void idle_balance(int this_cpu, struct rq *this_rq)
 	rcu_read_lock();
 	for_each_domain(this_cpu, sd) {
 		unsigned long interval;
-		int continue_balancing = 1;
+		int balance = 1;
 
 		if (!(sd->flags & SD_LOAD_BALANCE))
 			continue;
@@ -5471,8 +5362,7 @@ void idle_balance(int this_cpu, struct rq *this_rq)
 		if (sd->flags & SD_BALANCE_NEWIDLE) {
 			/* If we've pulled tasks over stop searching: */
 			pulled_task = load_balance(this_cpu, this_rq,
-						   sd, CPU_NEWLY_IDLE,
-						   &continue_balancing);
+						   sd, CPU_NEWLY_IDLE, &balance);
 		}
 
 		interval = msecs_to_jiffies(sd->balance_interval);
@@ -5643,9 +5533,10 @@ static inline void nohz_balance_exit_idle(int cpu)
 static inline void set_cpu_sd_state_busy(void)
 {
 	struct sched_domain *sd;
+	int cpu = smp_processor_id();
 
 	rcu_read_lock();
-	sd = rcu_dereference_check_sched_domain(this_rq()->sd);
+	sd = rcu_dereference_check_sched_domain(cpu_rq(cpu)->sd);
 
 	if (!sd || !sd->nohz_idle)
 		goto unlock;
@@ -5660,9 +5551,10 @@ unlock:
 void set_cpu_sd_state_idle(void)
 {
 	struct sched_domain *sd;
+	int cpu = smp_processor_id();
 
 	rcu_read_lock();
-	sd = rcu_dereference_check_sched_domain(this_rq()->sd);
+	sd = rcu_dereference_check_sched_domain(cpu_rq(cpu)->sd);
 
 	if (!sd || sd->nohz_idle)
 		goto unlock;
@@ -5726,7 +5618,7 @@ void update_max_interval(void)
  */
 static void rebalance_domains(int cpu, enum cpu_idle_type idle)
 {
-	int continue_balancing = 1;
+	int balance = 1;
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long interval;
 	struct sched_domain *sd;
@@ -5758,7 +5650,7 @@ static void rebalance_domains(int cpu, enum cpu_idle_type idle)
 		}
 
 		if (time_after_eq(jiffies, sd->last_balance + interval)) {
-			if (load_balance(cpu, rq, sd, idle, &continue_balancing)) {
+			if (load_balance(cpu, rq, sd, idle, &balance)) {
 				/*
 				 * The LBF_SOME_PINNED logic could have changed
 				 * env->dst_cpu, so we can't know our idle
@@ -5781,7 +5673,7 @@ out:
 		 * CPU in our sched group which is doing load balancing more
 		 * actively.
 		 */
-		if (!continue_balancing)
+		if (!balance)
 			break;
 	}
 	rcu_read_unlock();
@@ -5885,7 +5777,7 @@ static inline int nohz_kick_needed(struct rq *rq, int cpu)
 		if (sd->flags & SD_SHARE_PKG_RESOURCES && nr_busy > 1)
 			goto need_kick_unlock;
 
-		if (sd->flags & SD_ASYM_PACKING
+		if (sd->flags & SD_ASYM_PACKING && nr_busy != sg->group_weight
 		    && (cpumask_first_and(nohz.idle_cpus_mask,
 					  sched_domain_span(sd)) < cpu))
 			goto need_kick_unlock;
@@ -6075,7 +5967,7 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
 		se->vruntime -= cfs_rq->min_vruntime;
 	}
 
-#ifdef CONFIG_SMP
+#if defined(CONFIG_FAIR_GROUP_SCHED) && defined(CONFIG_SMP)
 	/*
 	* Remove our load from contribution when we leave sched_fair
 	* and ensure we don't carry in an old decay_count if we
@@ -6134,7 +6026,7 @@ void init_cfs_rq(struct cfs_rq *cfs_rq)
 #ifndef CONFIG_64BIT
 	cfs_rq->min_vruntime_copy = cfs_rq->min_vruntime;
 #endif
-#ifdef CONFIG_SMP
+#if defined(CONFIG_FAIR_GROUP_SCHED) && defined(CONFIG_SMP)
 	atomic64_set(&cfs_rq->decay_counter, 1);
 	atomic64_set(&cfs_rq->removed_load, 0);
 #endif
@@ -6319,9 +6211,6 @@ int sched_group_set_shares(struct task_group *tg, unsigned long shares)
 		se = tg->se[i];
 		/* Propagate contribution to hierarchy */
 		raw_spin_lock_irqsave(&rq->lock, flags);
-
-		/* Possible calls to update_curr() need rq clock */
-		update_rq_clock(rq);
 		for_each_sched_entity(se)
 			update_cfs_shares(group_cfs_rq(se));
 		raw_spin_unlock_irqrestore(&rq->lock, flags);
@@ -6377,8 +6266,9 @@ const struct sched_class fair_sched_class = {
 
 #ifdef CONFIG_SMP
 	.select_task_rq		= select_task_rq_fair,
+#ifdef CONFIG_FAIR_GROUP_SCHED
 	.migrate_task_rq	= migrate_task_rq_fair,
-
+#endif
 	.rq_online		= rq_online_fair,
 	.rq_offline		= rq_offline_fair,
 

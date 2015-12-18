@@ -85,11 +85,12 @@ void user_enter(void)
  * instead of preempt_schedule() to exit user context if needed before
  * calling the scheduler.
  */
-asmlinkage void __sched notrace preempt_schedule_context(void)
+void __sched notrace preempt_schedule_context(void)
 {
+	struct thread_info *ti = current_thread_info();
 	enum ctx_state prev_ctx;
 
-	if (likely(!preemptible()))
+	if (likely(ti->preempt_count || irqs_disabled()))
 		return;
 
 	/*

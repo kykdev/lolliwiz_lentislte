@@ -22,7 +22,6 @@ struct sched_param {
 #include <linux/errno.h>
 #include <linux/nodemask.h>
 #include <linux/mm_types.h>
-#include <linux/preempt.h>
 
 #include <asm/page.h>
 #include <asm/ptrace.h>
@@ -109,6 +108,14 @@ extern void sched_get_nr_running_avg(int *avg, int *iowait_avg);
 
 extern void calc_global_load(unsigned long ticks);
 extern void update_cpu_load_nohz(void);
+
+/* Notifier for when a task gets migrated to a new CPU */
+struct task_migration_notifier {
+	struct task_struct *task;
+	int from_cpu;
+	int to_cpu;
+};
+extern void register_task_migration_notifier(struct notifier_block *n);
 
 extern unsigned long get_parent_ip(unsigned long addr);
 
@@ -288,14 +295,6 @@ static inline void lockup_detector_init(void)
 }
 #endif
 
-#ifdef CONFIG_DETECT_HUNG_TASK
-void reset_hung_task_detector(void);
-#else
-static inline void reset_hung_task_detector(void)
-{
-}
-#endif
-
 /* Attach to any functions which should be ignored in wchan output. */
 #define __sched		__attribute__((__section__(".sched.text")))
 
@@ -444,12 +443,6 @@ struct task_cputime {
 		.sum_exec_runtime = 0,				\
 	}
 
-#ifdef CONFIG_PREEMPT_COUNT
-#define PREEMPT_DISABLED	(1 + PREEMPT_ENABLED)
-#else
-#define PREEMPT_DISABLED	PREEMPT_ENABLED
-#endif
-
 /*
  * Disable preemption until the scheduler is running.
  * Reset by start_kernel()->sched_init()->init_idle().
@@ -457,7 +450,7 @@ struct task_cputime {
  * We include PREEMPT_ACTIVE to avoid cond_resched() from working
  * before the scheduler is active -- see should_resched().
  */
-#define INIT_PREEMPT_COUNT	(PREEMPT_DISABLED + PREEMPT_ACTIVE)
+#define INIT_PREEMPT_COUNT	(1 + PREEMPT_ACTIVE)
 
 /**
  * struct thread_group_cputimer - thread group interval timer counts
@@ -937,7 +930,7 @@ struct load_weight {
 struct sched_avg {
 	/*
 	 * These sums represent an infinite geometric series and so are bound
-	 * above by 1024/(1-y).  Thus we only need a u32 to store them for all
+	 * above by 1024/(1-y).  Thus we only need a u32 to store them for for all
 	 * choices of y < 1-2^(-32)*1024.
 	 */
 	u32 runnable_avg_sum, runnable_avg_period;
@@ -1033,7 +1026,12 @@ struct sched_entity {
 	struct cfs_rq		*my_q;
 #endif
 
-#ifdef CONFIG_SMP
+/*
+ * Load-tracking only depends on SMP, FAIR_GROUP_SCHED dependency below may be
+ * removed when useful for applications beyond shares distribution (e.g.
+ * load-balance).
+ */
+#if defined(CONFIG_SMP) && defined(CONFIG_FAIR_GROUP_SCHED)
 	/* Per-entity load-tracking */
 	struct sched_avg	avg;
 #endif
@@ -1580,8 +1578,6 @@ static inline pid_t task_pgrp_nr(struct task_struct *tsk)
  * Test if a process is not yet dead (at most zombie state)
  * If pid_alive fails, then pointers within the task structure
  * can be stale and must not be dereferenced.
- *
- * Return: 1 if the process is alive. 0 otherwise.
  */
 static inline int pid_alive(struct task_struct *p)
 {
@@ -1593,8 +1589,6 @@ static inline int pid_alive(struct task_struct *p)
  * @tsk: Task structure to be checked.
  *
  * Check if a task structure is the first user space task the kernel created.
- *
- * Return: 1 if the task structure is init. 0 otherwise.
  */
 static inline int is_global_init(struct task_struct *tsk)
 {
@@ -1684,7 +1678,6 @@ extern int task_free_unregister(struct notifier_block *n);
 #define PF_MUTEX_TESTER	0x20000000	/* Thread belongs to the rt mutex tester */
 #define PF_FREEZER_SKIP	0x40000000	/* Freezer should not count it as freezable */
 #define PF_WAKE_UP_IDLE 0x80000000	/* try to wake up on an idle CPU */
-#define PF_SUSPEND_TASK 0x80000000      /* this thread called freeze_processes and should not be frozen */
 
 /*
  * Only the _current_ task can read/write to tsk->flags, but other
@@ -1958,8 +1951,6 @@ extern struct task_struct *idle_task(int cpu);
 /**
  * is_idle_task - is the specified task an idle task?
  * @p: the task in question.
- *
- * Return: 1 if @p is an idle task. 0 otherwise.
  */
 static inline bool is_idle_task(const struct task_struct *p)
 {
@@ -2236,15 +2227,15 @@ static inline bool thread_group_leader(struct task_struct *p)
  * all we care about is that we have a task with the appropriate
  * pid, we don't actually care if we have the right task.
  */
-static inline bool has_group_leader_pid(struct task_struct *p)
+static inline int has_group_leader_pid(struct task_struct *p)
 {
-	return task_pid(p) == p->signal->leader_pid;
+	return p->pid == p->tgid;
 }
 
 static inline
-bool same_thread_group(struct task_struct *p1, struct task_struct *p2)
+int same_thread_group(struct task_struct *p1, struct task_struct *p2)
 {
-	return p1->signal == p2->signal;
+	return p1->tgid == p2->tgid;
 }
 
 static inline struct task_struct *next_thread(const struct task_struct *p)
@@ -2462,6 +2453,11 @@ static inline int signal_pending_state(long state, struct task_struct *p)
 	return (state & TASK_INTERRUPTIBLE) || __fatal_signal_pending(p);
 }
 
+static inline int need_resched(void)
+{
+	return unlikely(test_thread_flag(TIF_NEED_RESCHED));
+}
+
 /*
  * cond_resched() and cond_resched_lock(): latency reduction via
  * explicit rescheduling in places that are safe. The return
@@ -2495,15 +2491,6 @@ extern int __cond_resched_softirq(void);
 	__might_sleep(__FILE__, __LINE__, SOFTIRQ_DISABLE_OFFSET);	\
 	__cond_resched_softirq();					\
 })
-
-static inline void cond_resched_rcu(void)
-{
-#if defined(CONFIG_DEBUG_ATOMIC_SLEEP) || !defined(CONFIG_PREEMPT_RCU)
-	rcu_read_unlock();
-	cond_resched();
-	rcu_read_lock();
-#endif
-}
 
 /*
  * Does a critical section need to be broken due to another
@@ -2623,11 +2610,6 @@ static inline bool __must_check current_clr_polling_and_test(void)
 	return unlikely(tif_need_resched());
 }
 #endif
-
-static __always_inline bool need_resched(void)
-{
-	return unlikely(tif_need_resched());
-}
 
 /*
  * Thread group CPU time accounting.
