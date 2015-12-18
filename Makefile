@@ -350,10 +350,10 @@ CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 MODFLAGS	= -marm -mtune=cortex-a15 -mcpu=cortex-a15 -mfpu=neon-vfpv4 \
 		  -mvectorize-with-neon-quad -fgcse-after-reload -fgcse-sm \
 		  -fgcse-las -ftree-loop-im -ftree-loop-ivcanon -fweb \
-		  -ftree-loop-linear -ftree-vectorize -fmodulo-sched \
-		  -ffast-math -funsafe-math-optimizations -std=gnu89 \
-		  --param l1-cache-size=16 --param l1-cache-line-size=16 \
-		  --param l2-cache-size=2048
+		  -frename-registers -ftree-loop-linear -ftree-vectorize \
+		  -fmodulo-sched -ffast-math -funsafe-math-optimizations \
+		  -std=gnu89 --param l1-cache-size=16 \
+		  --param l1-cache-line-size=16 --param l2-cache-size=2048
 CFLAGS_MODULE   = -DMODULE $(MODFLAGS)
 AFLAGS_MODULE   = -DMODULE $(MODFLAGS)
 LDFLAGS_MODULE  =
