@@ -25,7 +25,7 @@
 static unsigned int debug = 1;
 module_param_named(debug_mask, debug, uint, 0644);
 
-static bool state_suspended;
+bool state_suspended;
 module_param_named(state_suspended, state_suspended, bool, 0444);
 
 #define dprintk(msg...)		\
