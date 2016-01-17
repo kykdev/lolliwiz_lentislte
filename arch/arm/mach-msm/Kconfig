@@ -74,6 +74,7 @@ config ARCH_APQ8084
 	select MSM_IRQ
 	select PINCTRL
 	select PINCTRL_MSM_TLMM_V3
+	select HAS_MACH_MEMUTILS
 
 config ARCH_MPQ8092
 	bool "MPQ8092"
@@ -269,6 +270,7 @@ config ARCH_MSM8226
 	select PINCTRL_MSM_TLMM_V3
 	select ENABLE_VMALLOC_SAVINGS
 	select MSM_IRQ
+	select HAS_MACH_MEMUTILS
 
 config ARCH_MSMSAMARIUM
 	bool "MSMSAMARIUM"
@@ -1807,4 +1809,9 @@ config SAMSUNG_PRODUCT_SHIP
         bool "set up for product shipping"
         default n
 
+config HAS_MACH_MEMUTILS
+	default n
+	bool "Motorola MSM memcpy enhancements"
+	help
+	Faster memcpy performance for Krait
 endif
