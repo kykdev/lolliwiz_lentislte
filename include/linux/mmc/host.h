@@ -460,7 +460,6 @@ struct mmc_host {
 	atomic_t	log_count;
 	bool		mmc_core_cmd_logging;
 #endif
-	bool			wakeup_on_idle;
 	unsigned long		private[0] ____cacheline_aligned;
 };
 
