@@ -1024,13 +1024,13 @@ config SEC_STRING_ENABLE
 
 	  If unsure, say N.
 
-config STATE_NOTIFIER
-        bool "State Notifier"
-	depends on TOUCHSCREEN_SYNAPTICS_I2C_RMI_G
-	default y
-
 source "drivers/input/touchscreen/wacom/Kconfig"
 source "drivers/input/touchscreen/gt9xx/Kconfig"
 source "drivers/input/touchscreen/synaptics/Kconfig"
+
+config STATE_NOTIFIER
+        bool "State Notifier"
+	depends on TOUCHSCREEN_SYNAPTICS_G2
+	default y
 
 endif
