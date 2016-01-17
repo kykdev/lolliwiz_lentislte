@@ -27,6 +27,35 @@
 		spi0 = &spi_0;
 	};
 
+	cpus {
+		#size-cells = <0>;
+		#address-cells = <1>;
+
+		CPU0: cpu@0 {
+			device_type = "cpu";
+			compatible = "qcom,krait";
+			reg = <0x0>;
+		};
+
+		CPU1: cpu@1 {
+			device_type = "cpu";
+			compatible = "qcom,krait";
+			reg = <0x1>;
+		};
+
+		CPU2: cpu@2 {
+			device_type = "cpu";
+			compatible = "qcom,krait";
+			reg = <0x2>;
+		};
+
+		CPU3: cpu@3 {
+			device_type = "cpu";
+			compatible = "qcom,krait";
+			reg = <0x3>;
+		};
+	};
+
 	soc: soc { };
 
 	memory {
@@ -106,6 +135,11 @@
 		interrupts = <0 208 0>;
 		qcom,direct-connect-irqs = <8>;
 		qcom,subsys-id = <3>;
+	};
+
+	restart@fc4ab000 {
+		compatible = "qcom,pshold";
+		reg = <0xfc4ab000 0x4>;
 	};
 
 	timer {
@@ -215,7 +249,7 @@
 
 		qcom,tx-gpio = <&msmgpio 130 0>;
 		qcom,rx-gpio = <&msmgpio 131 0>;
-		qcom,inject-rx-on-wakeup = <1>;
+		qcom,inject-rx-on-wakeup;
 		qcom,rx-char-to-inject = <0x18>;
 
 		qcom,wakeup_irq = <2>;
@@ -450,7 +484,7 @@
 		interrupt-names = "hc_irq", "pwr_irq";
 
 		qcom,bus-width = <8>;
-		qcom,cpu-dma-latency-us = <200>;
+		qcom,cpu-dma-latency-us = <701>;
 
 		qcom,msm-bus,name = "sdhc1";
 		qcom,msm-bus,num-cases = <9>;
@@ -508,6 +542,7 @@
 		interrupt-names = "hc_irq", "pwr_irq";
 
 		qcom,bus-width = <4>;
+		qcom,cpu-dma-latency-us = <701>;
 
 		qcom,msm-bus,name = "sdhc2";
 		qcom,msm-bus,num-cases = <8>;
@@ -699,6 +734,7 @@
 		qcom,msm-bus,vectors-KBps =
 				<56 512 0 0>,
 				<56 512 3936000 393600>;
+		qcom,ce-opp-freq = <171430000>;
 	};
 
         qcom,qcrypto@fd440000 {
@@ -720,6 +756,7 @@
 		qcom,msm-bus,vectors-KBps =
 				<56 512 0 0>,
 				<56 512 3936000 393600>;
+		qcom,ce-opp-freq = <171430000>;
 	};
 
 	wcd9xxx_intc: wcd9xxx-irq {
@@ -990,6 +1027,7 @@
 		qcom,sda-gpio = <&msmgpio 61 0>;
 		qcom,scl-gpio = <&msmgpio 62 0>;
 		qcom,master-id = <84>;
+		qcom,extended-recovery = <1>;
 	};
 
 	i2c_3: i2c@f9968000 { /* BLSP2 QUP6 */
@@ -4783,6 +4821,7 @@
 				<55 512 0 0>,
 				<55 512 120000 1200000>,
 				<55 512 393600 3936000>;
+		qcom,ce-opp-freq = <171430000>;
 	};
 
 	jtag_fuse: jtagfuse@fc4be024 {
@@ -5364,6 +5403,7 @@
 		reg = <0xFE0C900C  0x4>,
 		      <0xFE0C9010  0x4>;
 		reg-names = "avtimer_lsb_addr", "avtimer_msb_addr";
+		qcom,clk_div = <27>;
 	};
 };
 
