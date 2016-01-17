@@ -1189,9 +1189,6 @@ endif
 # Fix build for GCC 4.7
 EXTRA_CFLAGS += -Wno-maybe-uninitialized -Wno-unused-function
 
-# Enable higher optimization level
-EXTRA_CFLAGS += -O2 -Wframe-larger-than=2048
-
 KBUILD_CPPFLAGS += $(CDEFINES)
 
 # Module information used by KBuild framework
