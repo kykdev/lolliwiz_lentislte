@@ -19,6 +19,9 @@
 #define DEFAULT_SUSPEND_DEFER_TIME	10
 #define STATE_NOTIFIER			"state_notifier"
 
+static bool enabled;
+module_param_named(enabled, enabled, bool, 0664);
+
 /*
  * debug = 1 will print all
  */
@@ -93,7 +96,7 @@ static void _resume_work(struct work_struct *work)
 
 void state_suspend(void)
 {
-	if (state_suspended || suspend_in_progress)
+	if (state_suspended || suspend_in_progress || !enabled)
 		return;
 
 	dprintk("%s: suspend called.\n", STATE_NOTIFIER);
