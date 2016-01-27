@@ -11,7 +11,6 @@ struct state_event {
 };
 
 extern bool state_suspended;
-extern bool scr_suspended;
 extern void state_suspend(void);
 extern void state_resume(void);
 int state_register_client(struct notifier_block *nb);
