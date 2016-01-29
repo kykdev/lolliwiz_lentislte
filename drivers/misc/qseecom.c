@@ -62,7 +62,6 @@
 #define QSEOS_CHECK_VERSION_CMD		0x00001803
 
 #define QSEE_CE_CLK_100MHZ		100000000
-#define CE_CLK_DIV			1000000
 
 #define QSEECOM_MAX_SG_ENTRY	512
 #define QSEECOM_INVALID_KEY_ID  0xff
@@ -182,7 +181,6 @@ struct qseecom_control {
 	struct work_struct bw_inactive_req_ws;
 	struct cdev cdev;
 	bool timer_running;
-	unsigned int ce_opp_freq_hz;
 };
 
 struct qseecom_client_handle {
@@ -4176,12 +4174,11 @@ static int __qseecom_init_clk(enum qseecom_ce_hw_instance ce)
 	/* Get CE3 src core clk. */
 	qclk->ce_core_src_clk = clk_get(pdev, core_clk_src);
 	if (!IS_ERR(qclk->ce_core_src_clk)) {
-		rc = clk_set_rate(qclk->ce_core_src_clk,
-						qseecom.ce_opp_freq_hz);
+		/* Set the core src clk @100Mhz */
+		rc = clk_set_rate(qclk->ce_core_src_clk, QSEE_CE_CLK_100MHZ);
 		if (rc) {
 			clk_put(qclk->ce_core_src_clk);
-			pr_err("Unable to set the core src clk @%uMhz.\n",
-					qseecom.ce_opp_freq_hz/CE_CLK_DIV);
+			pr_err("Unable to set the core src clk @100Mhz.\n");
 			return -EIO;
 		}
 	} else {
@@ -4423,12 +4420,6 @@ static int qseecom_probe(struct platform_device *pdev)
 		qseecom.qsee.instance = qseecom.ce_info.qsee_ce_hw_instance;
 		qseecom.ce_drv.instance = qseecom.ce_info.hlos_ce_hw_instance;
 
-		if (of_property_read_u32((&pdev->dev)->of_node,
-				"qcom,ce-opp-freq",
-				&qseecom.ce_opp_freq_hz)) {
-			pr_info("CE operating frequency is not defined, setting to default 100MHZ\n");
-			qseecom.ce_opp_freq_hz = QSEE_CE_CLK_100MHZ;
-		}
 		ret = __qseecom_init_clk(CLK_QSEE);
 		if (ret)
 			goto exit_destroy_ion_client;
