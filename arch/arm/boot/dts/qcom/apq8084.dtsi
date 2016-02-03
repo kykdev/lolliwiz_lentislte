@@ -137,11 +137,6 @@
 		qcom,subsys-id = <3>;
 	};
 
-	restart@fc4ab000 {
-		compatible = "qcom,pshold";
-		reg = <0xfc4ab000 0x4>;
-	};
-
 	timer {
 		compatible = "arm,armv7-timer";
 		interrupts = <1 2 0xf08>,
@@ -734,7 +729,6 @@
 		qcom,msm-bus,vectors-KBps =
 				<56 512 0 0>,
 				<56 512 3936000 393600>;
-		qcom,ce-opp-freq = <171430000>;
 	};
 
         qcom,qcrypto@fd440000 {
@@ -756,7 +750,6 @@
 		qcom,msm-bus,vectors-KBps =
 				<56 512 0 0>,
 				<56 512 3936000 393600>;
-		qcom,ce-opp-freq = <171430000>;
 	};
 
 	wcd9xxx_intc: wcd9xxx-irq {
@@ -4821,7 +4814,6 @@
 				<55 512 0 0>,
 				<55 512 120000 1200000>,
 				<55 512 393600 3936000>;
-		qcom,ce-opp-freq = <171430000>;
 	};
 
 	jtag_fuse: jtagfuse@fc4be024 {
