@@ -163,7 +163,7 @@ ENDPROC(aes_decrypt_3x)
 	 *		   int blocks)
 	 */
 ENTRY(ce_aes_ecb_encrypt)
-	push		{r4, lr}
+	stmdb		sp!, {r4, lr}
 	ldr		r4, [sp, #8]
 	prepare_key	r2, r3
 .Lecbencloop3x:
@@ -185,11 +185,11 @@ ENTRY(ce_aes_ecb_encrypt)
 	subs		r4, r4, #1
 	bne		.Lecbencloop
 .Lecbencout:
-	pop		{r4, pc}
+	ldmia		sp!, {r4, pc}
 ENDPROC(ce_aes_ecb_encrypt)
 
 ENTRY(ce_aes_ecb_decrypt)
-	push		{r4, lr}
+	stmdb		sp!, {r4, lr}
 	ldr		r4, [sp, #8]
 	prepare_key	r2, r3
 .Lecbdecloop3x:
@@ -211,7 +211,7 @@ ENTRY(ce_aes_ecb_decrypt)
 	subs		r4, r4, #1
 	bne		.Lecbdecloop
 .Lecbdecout:
-	pop		{r4, pc}
+	ldmia		sp!, {r4, pc}
 ENDPROC(ce_aes_ecb_decrypt)
 
 	/*
@@ -221,7 +221,7 @@ ENDPROC(ce_aes_ecb_decrypt)
 	 *		   int blocks, u8 iv[])
 	 */
 ENTRY(ce_aes_cbc_encrypt)
-	push		{r4-r6, lr}
+	stmdb		sp!, {r4-r6, lr}
 	ldrd		r4, r5, [sp, #16]
 	vld1.8		{q0}, [r5]
 	prepare_key	r2, r3
@@ -233,11 +233,11 @@ ENTRY(ce_aes_cbc_encrypt)
 	subs		r4, r4, #1
 	bne		.Lcbcencloop
 	vst1.8		{q0}, [r5]
-	pop		{r4-r6, pc}
+	ldmia		sp!, {r4-r6, pc}
 ENDPROC(ce_aes_cbc_encrypt)
 
 ENTRY(ce_aes_cbc_decrypt)
-	push		{r4-r6, lr}
+	stmdb		sp!, {r4-r6, lr}
 	ldrd		r4, r5, [sp, #16]
 	vld1.8		{q6}, [r5]		@ keep iv in q6
 	prepare_key	r2, r3
@@ -271,7 +271,7 @@ ENTRY(ce_aes_cbc_decrypt)
 	bne		.Lcbcdecloop
 .Lcbcdecout:
 	vst1.8		{q6}, [r5]		@ keep iv in q6
-	pop		{r4-r6, pc}
+	ldmia		sp!, {r4-r6, pc}
 ENDPROC(ce_aes_cbc_decrypt)
 
 	/*
@@ -279,7 +279,7 @@ ENDPROC(ce_aes_cbc_decrypt)
 	 *		   int blocks, u8 ctr[])
 	 */
 ENTRY(ce_aes_ctr_encrypt)
-	push		{r4-r6, lr}
+	stmdb		sp!, {r4-r6, lr}
 	ldrd		r4, r5, [sp, #16]
 	vld1.8		{q6}, [r5]		@ load ctr
 	prepare_key	r2, r3
@@ -331,13 +331,13 @@ ENTRY(ce_aes_ctr_encrypt)
 	bne		.Lctrloop
 .Lctrout:
 	vst1.8		{q6}, [r5]
-	pop		{r4-r6, pc}
+	ldmia		sp!, {r4-r6, pc}
 
 .Lctrhalfblock:
 	vld1.8		{d1}, [r1, :64]
 	veor		d0, d0, d1
 	vst1.8		{d0}, [r0, :64]
-	pop		{r4-r6, pc}
+	ldmia		sp!, {r4-r6, pc}
 
 .Lctrcarry:
 	.irp		sreg, s26, s25, s24
@@ -391,7 +391,7 @@ ce_aes_xts_init:
 ENDPROC(ce_aes_xts_init)
 
 ENTRY(ce_aes_xts_encrypt)
-	push		{r4-r6, lr}
+	stmdb		sp!, {r4-r6, lr}
 
 	bl		ce_aes_xts_init		@ run shared prologue
 	prepare_key	r2, r3
@@ -437,12 +437,12 @@ ENTRY(ce_aes_xts_encrypt)
 	b		.Lxtsencloop
 .Lxtsencout:
 	vst1.8		{q3}, [r5]
-	pop		{r4-r6, pc}
+	ldmia		sp!, {r4-r6, pc}
 ENDPROC(ce_aes_xts_encrypt)
 
 
 ENTRY(ce_aes_xts_decrypt)
-	push		{r4-r6, lr}
+	stmdb		sp!, {r4-r6, lr}
 
 	bl		ce_aes_xts_init		@ run shared prologue
 	prepare_key	r2, r3
@@ -489,7 +489,7 @@ ENTRY(ce_aes_xts_decrypt)
 	b		.Lxtsdecloop
 .Lxtsdecout:
 	vst1.8		{q3}, [r5]
-	pop		{r4-r6, pc}
+	ldmia		sp!, {r4-r6, pc}
 ENDPROC(ce_aes_xts_decrypt)
 
 	/*
