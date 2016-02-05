@@ -304,7 +304,7 @@ ENTRY(sha1_transform_neon)
   cmp RNBLKS, #0;
   beq .Ldo_nothing;
 
-  push {r4-r12, lr};
+  stmdb sp!, {r4-r12, lr};
   /*vpush {q4-q7};*/
 
   adr RT3, .LK_VEC;
@@ -632,7 +632,7 @@ ENTRY(sha1_transform_neon)
   add _e, RT0;
   stm RSTATE, {_a-_e};
 
-  pop {r4-r12, pc};
+  ldmia sp!, {r4-r12, pc};
 
 .Ldo_nothing:
   bx lr
