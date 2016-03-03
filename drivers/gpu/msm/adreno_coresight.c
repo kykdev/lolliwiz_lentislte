@@ -125,7 +125,6 @@ static void adreno_coresight_disable(struct coresight_device *csdev)
 {
 	struct kgsl_device *device = dev_get_drvdata(csdev->dev.parent);
 	struct adreno_device *adreno_dev;
-	struct adreno_gpudev *gpudev;
 	struct adreno_coresight *coresight;
 	int i;
 
@@ -133,9 +132,7 @@ static void adreno_coresight_disable(struct coresight_device *csdev)
 		return;
 
 	adreno_dev = ADRENO_DEVICE(device);
-	gpudev = ADRENO_GPU_DEVICE(adreno_dev);
-
-	coresight = gpudev->coresight;
+	coresight = adreno_dev->gpudev->coresight;
 
 	if (coresight == NULL)
 		return;
@@ -157,9 +154,8 @@ static void adreno_coresight_disable(struct coresight_device *csdev)
 
 static int _adreno_coresight_get(struct adreno_device *adreno_dev)
 {
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	struct kgsl_device *device = &adreno_dev->dev;
-	struct adreno_coresight *coresight = gpudev->coresight;
+	struct adreno_coresight *coresight = adreno_dev->gpudev->coresight;
 	int i;
 
 	if (coresight == NULL)
@@ -178,9 +174,8 @@ static int _adreno_coresight_get(struct adreno_device *adreno_dev)
 
 static int _adreno_coresight_set(struct adreno_device *adreno_dev)
 {
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	struct kgsl_device *device = &adreno_dev->dev;
-	struct adreno_coresight *coresight = gpudev->coresight;
+	struct adreno_coresight *coresight = adreno_dev->gpudev->coresight;
 	int i;
 
 	if (coresight == NULL)
@@ -211,7 +206,6 @@ static int adreno_coresight_enable(struct coresight_device *csdev)
 {
 	struct kgsl_device *device = dev_get_drvdata(csdev->dev.parent);
 	struct adreno_device *adreno_dev;
-	struct adreno_gpudev *gpudev;
 	struct adreno_coresight *coresight;
 	int ret = 0;
 
@@ -219,9 +213,7 @@ static int adreno_coresight_enable(struct coresight_device *csdev)
 		return -ENODEV;
 
 	adreno_dev = ADRENO_DEVICE(device);
-	gpudev = ADRENO_GPU_DEVICE(adreno_dev);
-
-	coresight = gpudev->coresight;
+	coresight = adreno_dev->gpudev->coresight;
 
 	if (coresight == NULL)
 		return -ENODEV;
@@ -291,7 +283,6 @@ int adreno_coresight_init(struct kgsl_device *device)
 {
 	int ret = 0;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	struct kgsl_device_platform_data *pdata =
 		device->parentdev->platform_data;
 	struct coresight_desc desc;
@@ -299,7 +290,7 @@ int adreno_coresight_init(struct kgsl_device *device)
 	if (pdata == NULL)
 		return -ENODEV;
 
-	if (gpudev->coresight == NULL)
+	if (adreno_dev->gpudev->coresight == NULL)
 		return -ENODEV;
 
 	if (IS_ERR_OR_NULL(pdata->coresight_pdata))
@@ -316,7 +307,7 @@ int adreno_coresight_init(struct kgsl_device *device)
 	desc.pdata = pdata->coresight_pdata;
 	desc.dev = device->parentdev;
 	desc.owner = THIS_MODULE;
-	desc.groups = gpudev->coresight->groups;
+	desc.groups = adreno_dev->gpudev->coresight->groups;
 
 	pdata->csdev = coresight_register(&desc);
 

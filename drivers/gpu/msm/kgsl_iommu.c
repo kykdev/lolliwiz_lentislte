@@ -1738,8 +1738,7 @@ kgsl_iommu_map(struct kgsl_pagetable *pt,
 	 *  being read) -> causing TLB sync stuck issues. As a result SW must
 	 *  implement the invalidate+map.
 	 */
-
-	if (ADRENO_FEATURE(adreno_dev, IOMMU_FLUSH_TLB_ON_MAP))
+	if (adreno_dev->features & IOMMU_FLUSH_TLB_ON_MAP)
 		kgsl_iommu_flush_tlb_pt_current(pt);
 
 	return ret;
