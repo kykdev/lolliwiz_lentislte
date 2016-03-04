@@ -44,7 +44,6 @@ static const int num_orders = ARRAY_SIZE(orders);
 static int order_to_index(unsigned int order)
 {
 	int i;
-
 	for (i = 0; i < num_orders; i++)
 		if (order == orders[i])
 			return i;
@@ -102,7 +101,6 @@ static void free_buffer_page(struct ion_system_heap *heap,
 			pool = heap->cached_pools[order_to_index(order)];
 		else
 			pool = heap->uncached_pools[order_to_index(order)];
-
 		ion_page_pool_free(pool, page);
 	} else {
 		__free_pages(page, order);
@@ -359,11 +357,9 @@ static int ion_system_heap_shrink(struct shrinker *shrinker,
 
 	struct ion_heap *heap = container_of(shrinker, struct ion_heap,
 					     shrinker);
-
 	struct ion_system_heap *sys_heap = container_of(heap,
 							struct ion_system_heap,
 							heap);
-
 	int nr_total = 0;
 	int nr_freed = 0;
 	int i;
@@ -414,10 +410,8 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 							struct ion_system_heap,
 							heap);
 	int i;
-
 	for (i = 0; i < num_orders; i++) {
 		struct ion_page_pool *pool = sys_heap->uncached_pools[i];
-
 		seq_printf(s,
 			"%d order %u highmem pages in uncached pool = %lu total\n",
 			pool->high_count, pool->order,
