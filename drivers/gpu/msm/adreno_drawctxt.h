@@ -65,7 +65,7 @@ struct adreno_context {
 	int state;
 	unsigned long priv;
 	unsigned int type;
-	struct mutex mutex;
+	spinlock_t lock;
 
 	/* Dispatcher */
 	struct kgsl_cmdbatch *cmdqueue[ADRENO_CONTEXT_CMDQUEUE_SIZE];
@@ -120,9 +120,6 @@ int adreno_drawctxt_wait(struct adreno_device *adreno_dev,
 		uint32_t timestamp, unsigned int timeout);
 
 void adreno_drawctxt_invalidate(struct kgsl_device *device,
-		struct kgsl_context *context);
-
-void adreno_drawctxt_dump(struct kgsl_device *device,
 		struct kgsl_context *context);
 
 #endif  /* __ADRENO_DRAWCTXT_H */

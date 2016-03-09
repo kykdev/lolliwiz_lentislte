@@ -1052,6 +1052,9 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 							pdata);
 		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_unblank(pdata);
+#ifdef CONFIG_STATE_NOTIFIER
+		state_resume();
+#endif
 		break;
 	case MDSS_EVENT_PANEL_ON:
 		//pr_info("%s : MDSS_EVENT_PANEL_ON \n", __func__);

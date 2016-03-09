@@ -44,8 +44,14 @@
    the statisic is greater then _max, set _max
 */
 
-#define KGSL_STATS_ADD(_size, _stat, _max) \
-	do { _stat += (_size); if (_stat > _max) _max = _stat; } while (0)
+static inline void KGSL_STATS_ADD(uint32_t size, atomic_t *stat,
+		atomic_t *max)
+{
+	uint32_t ret = atomic_add_return(size, stat);
+
+	if (ret > atomic_read(max))
+		atomic_set(max, ret);
+}
 
 
 #define KGSL_MEMFREE_HIST_SIZE	((int)(PAGE_SIZE * 2))
@@ -96,15 +102,14 @@ struct kgsl_driver {
 	struct kgsl_memfree_hist memfree_hist;
 
 	struct {
-		unsigned int vmalloc;
-		unsigned int vmalloc_max;
-		unsigned int page_alloc;
-		unsigned int page_alloc_max;
-		unsigned int coherent;
-		unsigned int coherent_max;
-		unsigned int mapped;
-		unsigned int mapped_max;
-		unsigned int histogram[16];
+		atomic_t vmalloc;
+		atomic_t vmalloc_max;
+		atomic_t page_alloc;
+		atomic_t page_alloc_max;
+		atomic_t coherent;
+		atomic_t coherent_max;
+		atomic_t mapped;
+		atomic_t mapped_max;
 	} stats;
 	unsigned int full_cache_threshold;
 };
@@ -277,15 +282,6 @@ static inline int kgsl_drm_init(struct platform_device *dev)
 static inline void kgsl_drm_exit(void)
 {
 }
-#endif
-
-#if defined (CONFIG_FB_MSM_MDSS_FENCE_DBG)
-void xlog_fence(char *name, char *data0_name, u32 data0,
-				char *data1_name, u32 data1,
-				char *data2_name, u32 data2,
-				char *data3_name, u32 data3,
-				char *data4_name, u32 data4, u32 data5);
-void xlog_fence_dump(void);
 #endif
 
 static inline int kgsl_gpuaddr_in_memdesc(const struct kgsl_memdesc *memdesc,

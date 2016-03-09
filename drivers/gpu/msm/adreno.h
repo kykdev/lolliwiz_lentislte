@@ -298,24 +298,20 @@ struct adreno_invalid_countables {
  * and are indexed by the enumeration values defined in this enum
  */
 enum adreno_regs {
-	ADRENO_REG_CP_DEBUG,
 	ADRENO_REG_CP_ME_RAM_WADDR,
 	ADRENO_REG_CP_ME_RAM_DATA,
 	ADRENO_REG_CP_PFP_UCODE_DATA,
 	ADRENO_REG_CP_PFP_UCODE_ADDR,
 	ADRENO_REG_CP_WFI_PEND_CTR,
 	ADRENO_REG_CP_RB_BASE,
-	ADRENO_REG_CP_RB_RPTR_ADDR,
 	ADRENO_REG_CP_RB_RPTR,
 	ADRENO_REG_CP_RB_WPTR,
-	ADRENO_REG_CP_PROTECT_CTRL,
 	ADRENO_REG_CP_ME_CNTL,
 	ADRENO_REG_CP_RB_CNTL,
 	ADRENO_REG_CP_IB1_BASE,
 	ADRENO_REG_CP_IB1_BUFSZ,
 	ADRENO_REG_CP_IB2_BASE,
 	ADRENO_REG_CP_IB2_BUFSZ,
-	ADRENO_REG_CP_TIMESTAMP,
 	ADRENO_REG_CP_ME_RAM_RADDR,
 	ADRENO_REG_CP_ROQ_ADDR,
 	ADRENO_REG_CP_ROQ_DATA,
@@ -326,8 +322,6 @@ enum adreno_regs {
 	ADRENO_REG_CP_MEQ_DATA,
 	ADRENO_REG_CP_HW_FAULT,
 	ADRENO_REG_CP_PROTECT_STATUS,
-	ADRENO_REG_SCRATCH_ADDR,
-	ADRENO_REG_SCRATCH_UMSK,
 	ADRENO_REG_SCRATCH_REG2,
 	ADRENO_REG_RBBM_STATUS,
 	ADRENO_REG_RBBM_PERFCTR_CTL,
@@ -347,17 +341,6 @@ enum adreno_regs {
 	ADRENO_REG_RBBM_AHB_PFP_SPLIT_STATUS,
 	ADRENO_REG_VPC_DEBUG_RAM_SEL,
 	ADRENO_REG_VPC_DEBUG_RAM_READ,
-	ADRENO_REG_VSC_PIPE_DATA_ADDRESS_0,
-	ADRENO_REG_VSC_PIPE_DATA_LENGTH_7,
-	ADRENO_REG_VSC_SIZE_ADDRESS,
-	ADRENO_REG_VFD_CONTROL_0,
-	ADRENO_REG_VFD_FETCH_INSTR_0_0,
-	ADRENO_REG_VFD_FETCH_INSTR_1_F,
-	ADRENO_REG_VFD_INDEX_MAX,
-	ADRENO_REG_SP_VS_PVT_MEM_ADDR_REG,
-	ADRENO_REG_SP_FS_PVT_MEM_ADDR_REG,
-	ADRENO_REG_SP_VS_OBJ_START_REG,
-	ADRENO_REG_SP_FS_OBJ_START_REG,
 	ADRENO_REG_PA_SC_AA_CONFIG,
 	ADRENO_REG_SQ_GPR_MANAGEMENT,
 	ADRENO_REG_SQ_INST_STORE_MANAGMENT,
@@ -580,6 +563,12 @@ struct log_field {
 	{ BIT(KGSL_FT_THROTTLE), "throttle"}, \
 	{ BIT(KGSL_FT_SKIPCMD), "skipcmd" }
 
+#define ADRENO_CMDBATCH_FLAGS \
+	{ KGSL_CMDBATCH_CTX_SWITCH, "CTX_SWITCH" }, \
+	{ KGSL_CMDBATCH_SYNC, "SYNC" }, \
+	{ KGSL_CMDBATCH_END_OF_FRAME, "EOF" }, \
+	{ KGSL_CMDBATCH_PWR_CONSTRAINT, "PWR_CONSTRAINT" }
+
 extern struct adreno_gpudev adreno_a3xx_gpudev;
 extern struct adreno_gpudev adreno_a4xx_gpudev;
 
@@ -668,14 +657,6 @@ void adreno_coresight_stop(struct adreno_device *adreno_dev);
 void adreno_coresight_remove(struct kgsl_device *device);
 
 bool adreno_hw_isidle(struct kgsl_device *device);
-#if defined (CONFIG_FB_MSM_MDSS_FENCE_DBG)
-void xlog_fence(char *name, char *data0_name, u32 data0,
-				char *data1_name, u32 data1,
-				char *data2_name, u32 data2,
-				char *data3_name, u32 data3,
-				char *data4_name, u32 data4, u32 data5);
-void xlog_fence_dump(void);
-#endif
 
 static inline int adreno_is_a3xx(struct adreno_device *adreno_dev)
 {

@@ -67,49 +67,6 @@ static int _check_context_timestamp(struct kgsl_device *device,
 }
 
 /**
- * adreno_drawctxt_dump() - dump information about a draw context
- * @device: KGSL device that owns the context
- * @context: KGSL context to dump information about
- *
- * Dump specific information about the context to the kernel log.  Used for
- * fence timeout callbacks
- */
-void adreno_drawctxt_dump(struct kgsl_device *device,
-		struct kgsl_context *context)
-{
-	unsigned int queue, start, retire;
-	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
-
-	mutex_lock(&drawctxt->mutex);
-
-	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_QUEUED, &queue);
-	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_CONSUMED, &start);
-	kgsl_readtimestamp(device, context, KGSL_TIMESTAMP_RETIRED, &retire);
-
-	dev_err(device->dev,
-		"  context[%d]: queue=%d, start=%d, retire=%d\n",
-		context->id, queue, start, retire);
-
-	if (drawctxt->cmdqueue_head != drawctxt->cmdqueue_tail) {
-		struct kgsl_cmdbatch *cmdbatch =
-			drawctxt->cmdqueue[drawctxt->cmdqueue_head];
-
-		spin_lock(&cmdbatch->lock);
-
-		if (!list_empty(&cmdbatch->synclist)) {
-			dev_err(device->dev,
-				"  context[%d] (ts=%d) Active sync points:\n",
-				context->id, cmdbatch->timestamp);
-
-			kgsl_dump_syncpoints(device, cmdbatch);
-		}
-		spin_unlock(&cmdbatch->lock);
-	}
-
-	mutex_unlock(&drawctxt->mutex);
-}
-
-/**
  * adreno_drawctxt_wait() - sleep until a timestamp expires
  * @adreno_dev: pointer to the adreno_device struct
  * @drawctxt: Pointer to the draw context to sleep for
@@ -161,15 +118,18 @@ int adreno_drawctxt_wait(struct adreno_device *adreno_dev,
 	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 
 	if (timeout) {
-		ret = (int) adreno_wait_event_interruptible_timeout(
+		long ret_temp;
+		ret_temp = adreno_wait_event_interruptible_timeout(
 			drawctxt->waiting,
 			_check_context_timestamp(device, drawctxt, timestamp),
 			msecs_to_jiffies(timeout), io);
 
-		if (ret == 0)
+		if (ret_temp == 0)
 			ret = -ETIMEDOUT;
-		else if (ret > 0)
+		else if (ret_temp > 0)
 			ret = 0;
+		else
+			ret = (int) ret_temp;
 	} else {
 		ret = (int) adreno_wait_event_interruptible(drawctxt->waiting,
 			_check_context_timestamp(device, drawctxt, timestamp),
@@ -247,14 +207,10 @@ static int adreno_drawctxt_wait_global(struct adreno_device *adreno_dev,
 	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 
 	if (timeout) {
-		ret = (int) wait_event_timeout(drawctxt->waiting,
+		if (0 == (int) wait_event_timeout(drawctxt->waiting,
 			_check_global_timestamp(device, drawctxt, timestamp),
-			msecs_to_jiffies(timeout));
-
-		if (ret == 0)
+			msecs_to_jiffies(timeout)))
 			ret = -ETIMEDOUT;
-		else if (ret > 0)
-			ret = 0;
 	} else {
 		wait_event(drawctxt->waiting,
 			_check_global_timestamp(device, drawctxt, timestamp));
@@ -286,10 +242,8 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 
 	trace_adreno_drawctxt_invalidate(drawctxt);
 
+	spin_lock(&drawctxt->lock);
 	drawctxt->state = ADRENO_CONTEXT_STATE_INVALID;
-
-	/* Clear the pending queue */
-	mutex_lock(&drawctxt->mutex);
 
 	/*
 	 * set the timestamp to the last value since the context is invalidated
@@ -310,18 +264,13 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 		drawctxt->cmdqueue_head = (drawctxt->cmdqueue_head + 1) %
 			ADRENO_CONTEXT_CMDQUEUE_SIZE;
 
-		mutex_unlock(&drawctxt->mutex);
-
-		kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 		kgsl_cancel_events_timestamp(device, &context->events,
 			cmdbatch->timestamp);
-		kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 
 		kgsl_cmdbatch_destroy(cmdbatch);
-		mutex_lock(&drawctxt->mutex);
 	}
 
-	mutex_unlock(&drawctxt->mutex);
+	spin_unlock(&drawctxt->lock);
 
 	/* Give the bad news to everybody waiting around */
 	wake_up_all(&drawctxt->waiting);
@@ -385,13 +334,14 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 		KGSL_CONTEXT_CTX_SWITCH |
 		KGSL_CONTEXT_PRIORITY_MASK |
 		KGSL_CONTEXT_TYPE_MASK |
-		KGSL_CONTEXT_PWR_CONSTRAINT);
+		KGSL_CONTEXT_PWR_CONSTRAINT |
+		KGSL_CONTEXT_IFH_NOP);
 
 	/* Always enable per-context timestamps */
 	drawctxt->base.flags |= KGSL_CONTEXT_PER_CONTEXT_TS;
 	drawctxt->type = (drawctxt->base.flags & KGSL_CONTEXT_TYPE_MASK)
 		>> KGSL_CONTEXT_TYPE_SHIFT;
-	mutex_init(&drawctxt->mutex);
+	spin_lock_init(&drawctxt->lock);
 	init_waitqueue_head(&drawctxt->wq);
 	init_waitqueue_head(&drawctxt->waiting);
 
@@ -465,7 +415,7 @@ int adreno_drawctxt_detach(struct kgsl_context *context)
 	if (adreno_dev->drawctxt_active == drawctxt)
 		adreno_drawctxt_switch(adreno_dev, NULL, 0);
 
-	mutex_lock(&drawctxt->mutex);
+	spin_lock(&drawctxt->lock);
 
 	while (drawctxt->cmdqueue_head != drawctxt->cmdqueue_tail) {
 		struct kgsl_cmdbatch *cmdbatch =
@@ -474,7 +424,7 @@ int adreno_drawctxt_detach(struct kgsl_context *context)
 		drawctxt->cmdqueue_head = (drawctxt->cmdqueue_head + 1) %
 			ADRENO_CONTEXT_CMDQUEUE_SIZE;
 
-		mutex_unlock(&drawctxt->mutex);
+		spin_unlock(&drawctxt->lock);
 
 		/*
 		 * If the context is deteached while we are waiting for
@@ -490,10 +440,10 @@ int adreno_drawctxt_detach(struct kgsl_context *context)
 		 */
 
 		kgsl_cmdbatch_destroy(cmdbatch);
-		mutex_lock(&drawctxt->mutex);
+		spin_lock(&drawctxt->lock);
 	}
 
-	mutex_unlock(&drawctxt->mutex);
+	spin_unlock(&drawctxt->lock);
 	/*
 	 * internal_timestamp is set in adreno_ringbuffer_addcmds,
 	 * which holds the device mutex. The entire context destroy
@@ -502,9 +452,15 @@ int adreno_drawctxt_detach(struct kgsl_context *context)
 	 */
 	BUG_ON(!mutex_is_locked(&device->mutex));
 
-	/* Wait for the last global timestamp to pass before continuing */
+	/*
+	 * Wait for the last global timestamp to pass before continuing.
+	 * The maxumum wait time is 30s, some large IB's can take longer
+	 * than 10s and if hang happens then the time for the context's
+	 * commands to retire will be greater than 10s. 30s should be sufficient
+	 * time to wait for the commands even if a hang happens.
+	 */
 	ret = adreno_drawctxt_wait_global(adreno_dev, context,
-		drawctxt->internal_timestamp, 10 * 1000);
+		drawctxt->internal_timestamp, 30 * 1000);
 
 	/*
 	 * If the wait for global fails then nothing after this point is likely
