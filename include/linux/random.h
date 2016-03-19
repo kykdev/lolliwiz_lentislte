@@ -34,6 +34,7 @@ extern const struct file_operations random_fops, urandom_fops;
 #endif
 
 unsigned int get_random_int(void);
+unsigned long get_random_long(void);
 unsigned long randomize_range(unsigned long start, unsigned long end, unsigned long len);
 
 u32 prandom_u32(void);
@@ -128,3 +129,5 @@ static inline u32 next_pseudo_random32(u32 seed)
 }
 
 #endif /* _LINUX_RANDOM_H */
+
+void erandom_get_random_bytes(char *buf, size_t count);

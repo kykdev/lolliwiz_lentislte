@@ -215,6 +215,7 @@ int set_freq_limit(unsigned long id, unsigned int freq);
 
 #define CPUFREQ_RELATION_L 0  /* lowest frequency at or above target */
 #define CPUFREQ_RELATION_H 1  /* highest frequency below or at target */
+#define CPUFREQ_RELATION_C 2  /* closest frequency to target */
 
 struct freq_attr {
 	struct attribute attr;
@@ -447,6 +448,8 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 int cpufreq_register_governor(struct cpufreq_governor *governor);
 void cpufreq_unregister_governor(struct cpufreq_governor *governor);
 
+#define MAX_FREQ_LIMIT 2457600
+
 /* CPUFREQ DEFAULT GOVERNOR */
 /*
  * Performance governor is fallback governor if any other gov failed to auto
@@ -472,6 +475,9 @@ extern struct cpufreq_governor cpufreq_gov_conservative;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE)
 extern struct cpufreq_governor cpufreq_gov_interactive;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_interactive)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_FRANCOACTIVE)
+extern struct cpufreq_governor cpufreq_gov_francoactive;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_francoactive)
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_YANKACTIVE)
 extern struct cpufreq_governor cpufreq_gov_yankactive;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_yankactive)
