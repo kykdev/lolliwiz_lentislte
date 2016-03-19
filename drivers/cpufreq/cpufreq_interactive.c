@@ -500,9 +500,11 @@ static unsigned int check_mode(int cpu, unsigned int cur_mode, u64 now)
 			ret &= ~MULTI_MODE;
 	}
 
+#if 0
 	trace_cpufreq_interactive_mode(cpu, total_load,
 		time_in_single_enter, time_in_multi_enter,
 		time_in_single_exit, time_in_multi_exit, ret);
+#endif
 
 	if (time_in_single_enter >= single_enter_time)
 		time_in_single_enter = 0;
