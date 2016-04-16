@@ -1040,6 +1040,7 @@ int a3xx_perfcounter_enable(struct adreno_device *adreno_dev,
 
 	/* Select the desired perfcounter */
 	kgsl_regwrite(device, reg->select, countable);
+	adreno_dev->gpudev->perfcounters->groups[group].regs[counter].value = 0;
 
 	return 0;
 }
@@ -1082,7 +1083,9 @@ static uint64_t a3xx_perfcounter_read_pwr(struct adreno_device *adreno_dev,
 	if (adreno_is_a3xx(adreno_dev))
 		adreno_writereg(adreno_dev, ADRENO_REG_RBBM_RBBM_CTL, in);
 
-	return (((uint64_t) hi) << 32) | lo;
+	return ((((uint64_t) hi) << 32) | lo)
+		+ counters->groups[KGSL_PERFCOUNTER_GROUP_PWR]
+				.regs[counter].value;
 }
 
 static uint64_t a3xx_perfcounter_read_vbif(struct adreno_device *adreno_dev,
@@ -1111,7 +1114,9 @@ static uint64_t a3xx_perfcounter_read_vbif(struct adreno_device *adreno_dev,
 	/* restore the perfcounter value */
 	kgsl_regwrite(device, A3XX_VBIF_PERF_CNT_EN, in);
 
-	return (((uint64_t) hi) << 32) | lo;
+	return ((((uint64_t) hi) << 32) | lo)
+		+ counters->groups[KGSL_PERFCOUNTER_GROUP_VBIF]
+				.regs[counter].value;
 }
 
 static uint64_t a3xx_perfcounter_read_vbif_pwr(struct adreno_device *adreno_dev,
@@ -1139,7 +1144,9 @@ static uint64_t a3xx_perfcounter_read_vbif_pwr(struct adreno_device *adreno_dev,
 	/* restore the perfcounter value */
 	kgsl_regwrite(device, A3XX_VBIF_PERF_CNT_EN, in);
 
-	return (((uint64_t) hi) << 32) | lo;
+	return ((((uint64_t) hi) << 32) | lo)
+		+ counters->groups[KGSL_PERFCOUNTER_GROUP_VBIF_PWR]
+				.regs[counter].value;
 }
 
 /*
@@ -1241,9 +1248,6 @@ void a3xx_perfcounter_save(struct adreno_device *adreno_dev)
 	unsigned int regid, groupid;
 
 	for (groupid = 0; groupid < counters->group_count; groupid++) {
-		if (!loadable_perfcounter_group(groupid))
-			continue;
-
 		group = &(counters->groups[groupid]);
 
 		/* group/counter iterator */
@@ -1251,9 +1255,14 @@ void a3xx_perfcounter_save(struct adreno_device *adreno_dev)
 			if (!active_countable(group->regs[regid].countable))
 				continue;
 
+			/* accumulate values for non-loadable counters */
+			if (loadable_perfcounter_group(groupid))
+				group->regs[regid].value = 0;
+
 			group->regs[regid].value =
-				adreno_dev->gpudev->perfcounter_read(
-				adreno_dev, groupid, regid);
+				group->regs[regid].value
+					+ adreno_dev->gpudev->perfcounter_read
+						(adreno_dev, groupid, regid);
 		}
 	}
 }
@@ -2226,27 +2235,21 @@ void *a3xx_snapshot(struct adreno_device *adreno_dev, void *snapshot,
 
 /* Register offset defines for A3XX */
 static unsigned int a3xx_register_offsets[ADRENO_REG_REGISTER_MAX] = {
-	ADRENO_REG_DEFINE(ADRENO_REG_CP_DEBUG, A3XX_CP_DEBUG),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_ME_RAM_WADDR, A3XX_CP_ME_RAM_WADDR),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_ME_RAM_DATA, A3XX_CP_ME_RAM_DATA),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_PFP_UCODE_DATA, A3XX_CP_PFP_UCODE_DATA),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_PFP_UCODE_ADDR, A3XX_CP_PFP_UCODE_ADDR),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_WFI_PEND_CTR, A3XX_CP_WFI_PEND_CTR),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_RB_BASE, A3XX_CP_RB_BASE),
-	ADRENO_REG_DEFINE(ADRENO_REG_CP_RB_RPTR_ADDR, A3XX_CP_RB_RPTR_ADDR),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_RB_RPTR, A3XX_CP_RB_RPTR),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_RB_WPTR, A3XX_CP_RB_WPTR),
-	ADRENO_REG_DEFINE(ADRENO_REG_CP_PROTECT_CTRL, A3XX_CP_PROTECT_CTRL),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_ME_CNTL, A3XX_CP_ME_CNTL),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_RB_CNTL, A3XX_CP_RB_CNTL),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_IB1_BASE, A3XX_CP_IB1_BASE),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_IB1_BUFSZ, A3XX_CP_IB1_BUFSZ),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_IB2_BASE, A3XX_CP_IB2_BASE),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_IB2_BUFSZ, A3XX_CP_IB2_BUFSZ),
-	ADRENO_REG_DEFINE(ADRENO_REG_CP_TIMESTAMP, A3XX_CP_SCRATCH_REG0),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_ME_RAM_RADDR, A3XX_CP_ME_RAM_RADDR),
-	ADRENO_REG_DEFINE(ADRENO_REG_SCRATCH_ADDR, A3XX_CP_SCRATCH_ADDR),
-	ADRENO_REG_DEFINE(ADRENO_REG_SCRATCH_UMSK, A3XX_CP_SCRATCH_UMSK),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_ROQ_ADDR, A4XX_CP_ROQ_ADDR),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_ROQ_DATA, A3XX_CP_ROQ_DATA),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_MERCIU_ADDR, A3XX_CP_MERCIU_ADDR),
@@ -2276,25 +2279,6 @@ static unsigned int a3xx_register_offsets[ADRENO_REG_REGISTER_MAX] = {
 				A3XX_VPC_VPC_DEBUG_RAM_SEL),
 	ADRENO_REG_DEFINE(ADRENO_REG_VPC_DEBUG_RAM_READ,
 				A3XX_VPC_VPC_DEBUG_RAM_READ),
-	ADRENO_REG_DEFINE(ADRENO_REG_VSC_PIPE_DATA_ADDRESS_0,
-				A3XX_VSC_PIPE_DATA_ADDRESS_0),
-	ADRENO_REG_DEFINE(ADRENO_REG_VSC_PIPE_DATA_LENGTH_7,
-					A3XX_VSC_PIPE_DATA_LENGTH_7),
-	ADRENO_REG_DEFINE(ADRENO_REG_VSC_SIZE_ADDRESS, A3XX_VSC_SIZE_ADDRESS),
-	ADRENO_REG_DEFINE(ADRENO_REG_VFD_CONTROL_0, A3XX_VFD_CONTROL_0),
-	ADRENO_REG_DEFINE(ADRENO_REG_VFD_FETCH_INSTR_0_0,
-					A3XX_VFD_FETCH_INSTR_0_0),
-	ADRENO_REG_DEFINE(ADRENO_REG_VFD_FETCH_INSTR_1_F,
-					A3XX_VFD_FETCH_INSTR_1_F),
-	ADRENO_REG_DEFINE(ADRENO_REG_VFD_INDEX_MAX, A3XX_VFD_INDEX_MAX),
-	ADRENO_REG_DEFINE(ADRENO_REG_SP_VS_PVT_MEM_ADDR_REG,
-				A3XX_SP_VS_PVT_MEM_ADDR_REG),
-	ADRENO_REG_DEFINE(ADRENO_REG_SP_FS_PVT_MEM_ADDR_REG,
-				A3XX_SP_FS_PVT_MEM_ADDR_REG),
-	ADRENO_REG_DEFINE(ADRENO_REG_SP_VS_OBJ_START_REG,
-				A3XX_SP_VS_OBJ_START_REG),
-	ADRENO_REG_DEFINE(ADRENO_REG_SP_FS_OBJ_START_REG,
-				A3XX_SP_FS_OBJ_START_REG),
 	ADRENO_REG_DEFINE(ADRENO_REG_PA_SC_AA_CONFIG, A3XX_PA_SC_AA_CONFIG),
 	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PM_OVERRIDE2, A3XX_RBBM_PM_OVERRIDE2),
 	ADRENO_REG_DEFINE(ADRENO_REG_SCRATCH_REG2, A3XX_CP_SCRATCH_REG2),

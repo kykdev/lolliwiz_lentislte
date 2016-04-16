@@ -61,9 +61,9 @@ struct kgsl_pagetable {
 	struct kobject *kobj;
 
 	struct {
-		unsigned int entries;
-		unsigned int mapped;
-		unsigned int max_mapped;
+		atomic_t entries;
+		atomic_t mapped;
+		atomic_t max_mapped;
 	} stats;
 	const struct kgsl_mmu_pt_ops *pt_ops;
 	unsigned int tlb_flags;
@@ -151,7 +151,7 @@ struct kgsl_mmu {
 	bool use_cpu_map;
 };
 
-extern struct kgsl_mmu_ops iommu_ops;
+extern struct kgsl_mmu_ops kgsl_iommu_ops;
 extern struct kgsl_mmu_pt_ops iommu_pt_ops;
 
 struct kgsl_pagetable *kgsl_mmu_getpagetable(struct kgsl_mmu *,

@@ -1457,6 +1457,8 @@ static void kgsl_iommu_lock_rb_in_tlb(struct kgsl_mmu *mmu)
 	for (i = 0; i < iommu->unit_count; i++) {
 		struct kgsl_iommu_unit *iommu_unit = &iommu->iommu_units[i];
 		for (j = 0; j < iommu_unit->dev_count; j++) {
+			if (!iommu_unit->dev[j].attached)
+				continue;
 			tlblkcr = 0;
 			tlblkcr |= (((num_tlb_entries *
 				iommu_unit->dev_count) &
@@ -1477,6 +1479,8 @@ static void kgsl_iommu_lock_rb_in_tlb(struct kgsl_mmu *mmu)
 					TLBLKCR, tlblkcr);
 		}
 		for (j = 0; j < iommu_unit->dev_count; j++) {
+			if (!iommu_unit->dev[j].attached)
+				continue;
 			/* Lock the ringbuffer virtual address into tlb */
 			vaddr = rb->buffer_desc.gpuaddr;
 			for (k = 0; k < num_tlb_entries; k++) {
@@ -1513,6 +1517,8 @@ static void kgsl_iommu_lock_rb_in_tlb(struct kgsl_mmu *mmu)
 			}
 		}
 		for (j = 0; j < iommu_unit->dev_count; j++) {
+			if (!iommu_unit->dev[j].attached)
+				continue;
 			tlblkcr = KGSL_IOMMU_GET_CTX_REG(iommu, iommu_unit,
 						iommu_unit->dev[j].ctx_id,
 						TLBLKCR);
@@ -1594,9 +1600,9 @@ static int kgsl_iommu_start(struct kgsl_mmu *mmu)
 	_iommu_unlock(iommu);
 
 	/* For complete CFF */
-	kgsl_cffdump_setmem(mmu->device, mmu->setstate_memory.gpuaddr +
+	kgsl_cffdump_write(mmu->device, mmu->setstate_memory.gpuaddr +
 				KGSL_IOMMU_SETSTATE_NOP_OFFSET,
-				cp_nop_packet(1), sizeof(unsigned int));
+				cp_nop_packet(1));
 
 	kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_MAX_UNITS);
 	mmu->flags |= KGSL_FLAGS_STARTED;
@@ -1749,6 +1755,8 @@ static void kgsl_iommu_pagefault_resume(struct kgsl_mmu *mmu)
 			struct kgsl_iommu_unit *iommu_unit =
 						&iommu->iommu_units[i];
 			for (j = 0; j < iommu_unit->dev_count; j++) {
+				if (!iommu_unit->dev[j].attached)
+					continue;
 				if (iommu_unit->dev[j].fault) {
 					_iommu_lock(iommu);
 					KGSL_IOMMU_SET_CTX_REG(iommu,
@@ -1874,7 +1882,7 @@ static int kgsl_iommu_default_setstate(struct kgsl_mmu *mmu,
 
 	/* For v0 SMMU GPU needs to be idle for tlb invalidate as well */
 	if (msm_soc_version_supports_iommu_v0()) {
-		ret = kgsl_idle(mmu->device);
+		ret = adreno_spin_idle(mmu->device);
 		if (ret)
 			return ret;
 	}
@@ -1884,7 +1892,7 @@ static int kgsl_iommu_default_setstate(struct kgsl_mmu *mmu,
 
 	if (flags & KGSL_MMUFLAGS_PTUPDATE) {
 		if (!msm_soc_version_supports_iommu_v0()) {
-			ret = kgsl_idle(mmu->device);
+			ret = adreno_spin_idle(mmu->device);
 			if (ret)
 				goto unlock;
 		}
@@ -2030,6 +2038,8 @@ static int kgsl_iommu_set_pf_policy(struct kgsl_mmu *mmu,
 	for (i = 0; i < iommu->unit_count; i++) {
 		struct kgsl_iommu_unit *iommu_unit = &iommu->iommu_units[i];
 		for (j = 0; j < iommu_unit->dev_count; j++) {
+			if (!iommu_unit->dev[j].attached)
+				continue;
 			sctlr_val = KGSL_IOMMU_GET_CTX_REG(iommu,
 					iommu_unit,
 					iommu_unit->dev[j].ctx_id,
@@ -2073,6 +2083,8 @@ static void kgsl_iommu_set_pagefault(struct kgsl_mmu *mmu)
 	/* Loop through all IOMMU devices to check for fault */
 	for (i = 0; i < iommu->unit_count; i++) {
 		for (j = 0; j < iommu->iommu_units[i].dev_count; j++) {
+			if (!iommu->iommu_units[i].dev[j].attached)
+				continue;
 			fsr = KGSL_IOMMU_GET_CTX_REG(iommu,
 				(&(iommu->iommu_units[i])),
 				iommu->iommu_units[i].dev[j].ctx_id, FSR);
@@ -2091,7 +2103,7 @@ static void kgsl_iommu_set_pagefault(struct kgsl_mmu *mmu)
 	kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_MAX_UNITS);
 }
 
-struct kgsl_mmu_ops iommu_ops = {
+struct kgsl_mmu_ops kgsl_iommu_ops = {
 	.mmu_init = kgsl_iommu_init,
 	.mmu_close = kgsl_iommu_close,
 	.mmu_start = kgsl_iommu_start,

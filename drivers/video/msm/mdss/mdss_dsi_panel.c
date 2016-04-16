@@ -22,6 +22,10 @@
 #include <linux/qpnp/pwm.h>
 #include <linux/err.h>
 
+#ifdef CONFIG_STATE_NOTIFIER
+#include <linux/state_notifier.h>
+#endif
+
 #include "mdss_dsi.h"
 
 #if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
@@ -774,6 +778,9 @@ end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_BLANK;
 	pr_debug("%s:-\n", __func__);
 	return 0;
+#ifdef CONFIG_STATE_NOTIFIER
+	state_suspend();
+#endif
 }
 
 static int mdss_dsi_panel_low_power_config(struct mdss_panel_data *pdata,

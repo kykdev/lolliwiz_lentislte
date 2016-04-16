@@ -136,8 +136,6 @@ struct kgsl_functable {
 						uint32_t *flags);
 	int (*drawctxt_detach) (struct kgsl_context *context);
 	void (*drawctxt_destroy) (struct kgsl_context *context);
-	void (*drawctxt_dump) (struct kgsl_device *device,
-		struct kgsl_context *context);
 	long (*ioctl) (struct kgsl_device_private *dev_priv,
 		unsigned int cmd, void *data);
 	long (*compat_ioctl) (struct kgsl_device_private *dev_priv,
@@ -196,6 +194,7 @@ struct kgsl_event {
  * @events: List of active GPU events
  * @group: Node for the master group list
  * @processed: Last processed timestamp
+ * @name: String name for the group (for the debugfs file)
  */
 struct kgsl_event_group {
 	struct kgsl_context *context;
@@ -203,6 +202,7 @@ struct kgsl_event_group {
 	struct list_head events;
 	struct list_head group;
 	unsigned int processed;
+	char name[64];
 };
 
 /**
@@ -580,7 +580,7 @@ void kgsl_events_exit(void);
 
 void kgsl_del_event_group(struct kgsl_event_group *group);
 void kgsl_add_event_group(struct kgsl_event_group *group,
-		struct kgsl_context *context);
+		struct kgsl_context *context, const char *name);
 
 void kgsl_cancel_events_timestamp(struct kgsl_device *device,
 		struct kgsl_event_group *group, unsigned int timestamp);
@@ -607,8 +607,6 @@ void kgsl_context_destroy(struct kref *kref);
 int kgsl_context_init(struct kgsl_device_private *, struct kgsl_context
 		*context);
 int kgsl_context_detach(struct kgsl_context *context);
-
-void kgsl_context_dump(struct kgsl_context *context);
 
 /**
  * kgsl_context_put() - Release context reference count
@@ -685,16 +683,8 @@ static inline int _kgsl_context_get(struct kgsl_context *context)
 {
 	int ret = 0;
 
-	if (context) {
+	if (context)
 		ret = kref_get_unless_zero(&context->refcount);
-		/*
-		 * We shouldn't realistically fail kref_get_unless_zero unless
-		 * we did something really dumb so make the failure both public
-		 * and painful
-		 */
-
-		WARN_ON(!ret);
-	}
 
 	return ret;
 }
@@ -727,8 +717,6 @@ static inline struct kgsl_context *kgsl_context_get_owner(
 	return context;
 }
 
-void kgsl_dump_syncpoints(struct kgsl_device *device,
-	struct kgsl_cmdbatch *cmdbatch);
 
 void kgsl_cmdbatch_destroy(struct kgsl_cmdbatch *cmdbatch);
 

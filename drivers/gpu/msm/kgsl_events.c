@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,8 +14,10 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/workqueue.h>
+#include <linux/debugfs.h>
 #include <kgsl_device.h>
 
+#include "kgsl_debugfs.h"
 #include "kgsl_trace.h"
 
 /*
@@ -23,6 +25,7 @@
  * so frequently
  */
 static struct kmem_cache *events_cache;
+static struct dentry *events_dentry;
 
 static inline void signal_event(struct kgsl_device *device,
 		struct kgsl_event *event, int result)
@@ -44,13 +47,6 @@ static void _kgsl_event_worker(struct work_struct *work)
 	struct kgsl_event *event = container_of(work, struct kgsl_event, work);
 	int id = KGSL_CONTEXT_ID(event->context);
 
-#if defined(CONFIG_FB_MSM_MDSS_FENCE_DBG)
-	xlog_fence((char*)__func__, "ctx", id,
-		"ts", event->timestamp,
-		"result", event->result,
-		"age", jiffies - event->created,
-		NULL, 0, 0);
-#endif
 	trace_kgsl_fire_event(id, event->timestamp, event->result,
 		jiffies - event->created, event->func);
 
@@ -72,7 +68,12 @@ static void retire_events(struct kgsl_device *device,
 	unsigned int timestamp;
 	struct kgsl_context *context = group->context;
 
-	_kgsl_context_get(context);
+	/*
+	 * Sanity check to be sure that we we aren't racing with the context
+	 * getting destroyed
+	 */
+	if (context != NULL && !_kgsl_context_get(context))
+		return;
 
 	spin_lock(&group->lock);
 
@@ -199,7 +200,10 @@ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 		return -ENOMEM;
 
 	/* Get a reference to the context while the event is active */
-	_kgsl_context_get(context);
+	if (context != NULL && !_kgsl_context_get(context)) {
+		kmem_cache_free(events_cache, event);
+		return -ENOENT;
+	}
 
 	event->device = device;
 	event->context = context;
@@ -209,11 +213,6 @@ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 	event->created = jiffies;
 
 	INIT_WORK(&event->work, _kgsl_event_worker);
-#if defined(CONFIG_FB_MSM_MDSS_FENCE_DBG)
-	xlog_fence((char*)__func__, "register_event ctx", KGSL_CONTEXT_ID(context),
-		"ts", timestamp,
-		NULL, 0, NULL, 0, NULL, 0, 0);
-#endif
 
 	trace_kgsl_register_event(KGSL_CONTEXT_ID(context), timestamp, func);
 
@@ -281,18 +280,73 @@ EXPORT_SYMBOL(kgsl_del_event_group);
  * group: Pointer to the new group to add to the list
  */
 void kgsl_add_event_group(struct kgsl_event_group *group,
-		struct kgsl_context *context)
+		struct kgsl_context *context, const char *name)
 {
 	spin_lock_init(&group->lock);
 	INIT_LIST_HEAD(&group->events);
 
 	group->context = context;
 
+	if (name)
+		strlcpy(group->name, name, sizeof(group->name));
+
 	write_lock(&group_lock);
 	list_add_tail(&group->group, &group_list);
 	write_unlock(&group_lock);
 }
 EXPORT_SYMBOL(kgsl_add_event_group);
+
+static void events_debugfs_print_group(struct seq_file *s,
+		struct kgsl_event_group *group)
+{
+	struct kgsl_event *event;
+	unsigned int retired;
+
+	spin_lock(&group->lock);
+
+	seq_printf(s, "%s: last=%d\n", group->name, group->processed);
+
+	list_for_each_entry(event, &group->events, node) {
+
+		kgsl_readtimestamp(event->device, group->context,
+			KGSL_TIMESTAMP_RETIRED, &retired);
+
+		seq_printf(s, "\t%d:%d age=%lu func=%ps [retired=%d]\n",
+			group->context ? group->context->id : 0,
+			event->timestamp, jiffies  - event->created,
+			event->func, retired);
+	}
+	spin_unlock(&group->lock);
+}
+
+static int events_debugfs_print(struct seq_file *s, void *unused)
+{
+	struct kgsl_event_group *group;
+
+	seq_puts(s, "event groups:\n");
+	seq_puts(s, "--------------\n");
+
+	read_lock(&group_lock);
+	list_for_each_entry(group, &group_list, group) {
+		events_debugfs_print_group(s, group);
+		seq_puts(s, "\n");
+	}
+	read_unlock(&group_lock);
+
+	return 0;
+}
+
+static int events_debugfs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, events_debugfs_print, NULL);
+}
+
+static const struct file_operations events_fops = {
+	.open = events_debugfs_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 /**
  * kgsl_events_exit() - Destroy the event kmem cache on module exit
@@ -301,6 +355,8 @@ void kgsl_events_exit(void)
 {
 	if (events_cache)
 		kmem_cache_destroy(events_cache);
+
+	debugfs_remove(events_dentry);
 }
 
 /**
@@ -308,5 +364,13 @@ void kgsl_events_exit(void)
  */
 void __init kgsl_events_init(void)
 {
+	struct dentry *debugfs_dir = kgsl_get_debugfs_dir();
 	events_cache = KMEM_CACHE(kgsl_event, 0);
+
+	events_dentry = debugfs_create_file("events", 0444, debugfs_dir, NULL,
+		&events_fops);
+
+	/* Failure to create a debugfs entry is non fatal */
+	if (IS_ERR(events_dentry))
+		events_dentry = NULL;
 }
